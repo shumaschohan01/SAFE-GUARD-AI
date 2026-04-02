@@ -270,22 +270,33 @@ elif menu == "👤 Worker Database":
 
 
 elif menu == "🎥 Live Monitoring":
-    st.header("🎥 Live Safety Feed")
+    st.header("🎥 Live AI Safety Feed")
+    
+    # 1. Pehle variable define karein (Yeh line miss ho rahi thi)
+    rtc_config = {
+        "iceServers": [
+            {"urls": ["stun:stun.l.google.com:19302"]},
+            {"urls": ["stun:stun1.l.google.com:19302"]},
+            {"urls": ["stun:stun2.l.google.com:19302"]}
+        ]
+    }
+    
+    # 2. Phir streamer mein use karein
     webrtc_streamer(
-    key="cam",
-    mode=WebRtcMode.SENDRECV,
-    video_processor_factory=lambda: VideoProcessor(target_email),
-    rtc_configuration=rtc_configuration,
-    media_stream_constraints={
-        "video": {
-            "width": {"ideal": 480},   # Resolution kam rakhein (640 se 480)
-            "height": {"ideal": 360},
-            "frameRate": {"ideal": 10}  # 10 FPS kafi hai detection ke liye
+        key="cam", 
+        mode=WebRtcMode.SENDRECV,
+        video_processor_factory=lambda: VideoProcessor(target_email),
+        rtc_configuration=rtc_config, # Yahan wahi naam use karein jo upar rakha hai
+        media_stream_constraints={
+            "video": {
+                "width": {"ideal": 640},
+                "height": {"ideal": 480},
+                "frameRate": {"ideal": 15}
+            },
+            "audio": False
         },
-        "audio": False
-    },
-    async_processing=True,
-)
+        async_processing=True
+    )
 
 elif menu == "📁 Batch Processing":
     st.header("📁 Image Batch Analysis")
