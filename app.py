@@ -136,7 +136,7 @@ elif menu == "👤 Worker Database":
         Image.open(img_file).save(os.path.join(FACES_DB, f"{name}_{wid}.jpg"))
         st.success("Worker Registered!")
 
-elif menu == "🎥 Live Monitoring":
+ elif menu == "🎥 Live Monitoring":
     st.header("Live AI Safety Feed")
     elif menu == "🎥 Live Monitoring":
     st.header("Live AI Safety Feed")
