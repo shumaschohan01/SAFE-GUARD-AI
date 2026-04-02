@@ -183,9 +183,9 @@ if menu == "📊 Analytics":
             st.line_chart(trend_df)
             
         with c2:
-            st.subheader("🍕 Equipment Distribution")
+            st.subheader("🍕 Violation Distribution")
             fig, ax = plt.subplots(figsize=(5, 5))
-            df['equipment'].value_counts().plot.pie(autopct='%1.1f%%', ax=ax, colors=['#ff9999','#66b3ff','#99ff99'])
+            df['worker_name'].value_counts().plot.pie(autopct='%1.1f%%', ax=ax, colors=['#ff9999','#66b3ff','#99ff99'])
             st.pyplot(fig)
 
         st.subheader("📝 Recent Violation Logs")
