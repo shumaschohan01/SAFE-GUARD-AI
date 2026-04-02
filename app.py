@@ -55,6 +55,8 @@ def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
     try:
         name, wid = worker_info.split("_") if "_" in worker_info else (worker_info, "N/A")
         clean_eq = v_type.lower().replace("no", "").replace("-", "").strip().capitalize()
+        
+        # 1. Database mein save karein
         conn = sqlite3.connect("safety_violations.db")
         conn.execute('''INSERT INTO violations (timestamp, type, status, equipment, worker_name, worker_id, confidence) 
                         VALUES (?, ?, ?, ?, ?, ?, ?)''',
@@ -62,10 +64,31 @@ def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
         conn.commit()
         conn.close()
         
-        if v_conf > 0.6 and user_email:
-            payload = {"worker": name, "equipment": clean_eq, "email": user_email}
-            requests.post(N8N_URL, json=payload, timeout=1)
-    except: pass
+        # 2. Email Alert Logic
+        # Sirf tab email bhejein jab confidence high ho aur email address provide kiya gaya ho
+        if v_conf > 0.75 and user_email and "@" in user_email:
+            # Payload jo Pipedream ko jayega
+            payload = {
+                "worker": name,
+                "worker_id": wid,
+                "violation": clean_eq,
+                "confidence": f"{v_conf:.2f}",
+                "time": datetime.now().strftime("%I:%M %p"),
+                "email": user_email,
+                "subject": f"⚠️ SAFETY ALERT: {clean_eq} Violation detected!"
+            }
+            
+            # Email bhejne ki request
+            # Note: Isay 'background' mein hona chahiye taaki app hang na ho
+            try:
+                requests.post(N8N_URL, json=payload, timeout=2)
+                # Success message sirf console/sidebar mein dikhane ke liye
+                print(f"Alert sent for {name}")
+            except:
+                print("Email service unreachable")
+                
+    except Exception as e:
+        print(f"Reporting Error: {e}")
 
 def run_detection(frame, user_email):
     try:
