@@ -129,7 +129,7 @@ if menu == "📊 Analytics":
         with c2:
             st.subheader("Violation Distribution (%)")
             fig, ax = plt.subplots()
-            df['equipment'].value_counts().plot.pie(autopct='%1.1f%%', ax=ax)
+            df['worker_name'].value_counts().plot.pie(autopct='%1.1f%%', ax=ax)
             st.pyplot(fig)
         st.subheader("Detailed Logs")
         st.dataframe(df.sort_values(by="timestamp", ascending=False), use_container_width=True)
