@@ -152,13 +152,13 @@ elif menu == "👤 Worker Database":
 
 elif menu == "🎥 Live Monitoring":
     st.header("Live AI Guard")
-    webrtc_streamer(
-        key="cam", 
-        mode=WebRtcMode.SENDRECV, 
-        video_processor_factory=lambda: VideoProcessor(target_email),
-        media_stream_constraints={"video": True, "audio": False},
-        async_processing=True
-    )
+   webrtc_streamer(
+    key="cam", 
+    mode=WebRtcMode.SENDRECV, 
+    video_processor_factory=lambda: VideoProcessor(target_email),
+    media_stream_constraints={"video": True, "audio": False},
+    # async_processing ko hata dein agar masla ho
+)
 
 elif menu == "📁 Batch":
     st.header("Media Analysis")
