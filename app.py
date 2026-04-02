@@ -1,5 +1,5 @@
 import streamlit as st
-import cv2
+from PIL import Image
 import requests
 import numpy as np
 import pandas as pd
