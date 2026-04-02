@@ -59,8 +59,7 @@ def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
         conn.commit()
         conn.close()
         
-        # Email Alert Logic (Pipedream)
-        if v_conf > 0.6:
+        if v_conf > 0.6 and user_email:
             payload = {"worker": name, "equipment": clean_eq, "email": user_email}
             requests.post(N8N_URL, json=payload, timeout=1)
     except: pass
@@ -68,7 +67,7 @@ def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
 def run_detection(frame, user_email):
     try:
         _, img_encoded = cv2.imencode('.jpg', frame)
-        response = requests.post(API_URL, files={'file': img_encoded.tobytes()}, timeout=4)
+        response = requests.post(API_URL, files={'file': img_encoded.tobytes()}, timeout=6)
         if response.status_code == 200:
             detections = response.json().get('detections', [])
             for det in detections:
@@ -84,8 +83,9 @@ def run_detection(frame, user_email):
 
                 color = (0, 0, 255) if is_unsafe else (0, 255, 0)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
-                cv2.putText(frame, f"{label}", (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-    except: pass
+                cv2.putText(frame, f"{label} {conf:.2f}", (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+    except Exception as e:
+        print(f"Detection Error: {e}")
     return frame
 
 # --- WEBRTC PROCESSOR ---
@@ -101,7 +101,7 @@ st.set_page_config(page_title="Safe-Guard AI", layout="wide")
 
 with st.sidebar:
     st.title("🛡️ SAFE-GUARD AI")
-    menu = st.radio("Navigation", ["📊 Analytics", "👤 Worker Database", "🎥 Live Monitoring"])
+    menu = st.radio("Navigation", ["📊 Analytics", "👤 Worker Database", "🎥 Live Monitoring", "📁 Batch Processing"])
     target_email = st.text_input("Alert Email", placeholder="user@example.com")
 
 # --- PAGES ---
@@ -121,37 +121,48 @@ if menu == "📊 Analytics":
             fig, ax = plt.subplots()
             df['equipment'].value_counts().plot.pie(autopct='%1.1f%%', ax=ax)
             st.pyplot(fig)
-        
         st.subheader("Detailed Logs")
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df.sort_values(by="timestamp", ascending=False), use_container_width=True)
     else:
         st.info("Abhi tak koi violation data nahi mila.")
 
 elif menu == "👤 Worker Database":
     st.header("👤 Register New Worker")
-    name = st.text_input("Worker Name")
-    wid = st.text_input("Worker ID")
-    img_file = st.camera_input("Take Photo")
-    if st.button("Register") and img_file and name:
-        Image.open(img_file).save(os.path.join(FACES_DB, f"{name}_{wid}.jpg"))
-        st.success("Worker Registered!")
+    col1, col2 = st.columns(2)
+    with col1:
+        name = st.text_input("Worker Name")
+        wid = st.text_input("Worker ID")
+        img_file = st.camera_input("Take Photo")
+        if st.button("Register") and img_file and name:
+            Image.open(img_file).save(os.path.join(FACES_DB, f"{name}_{wid}.jpg"))
+            st.success(f"Worker {name} Registered Successfully!")
+    with col2:
+        st.subheader("Existing Workers")
+        if os.path.exists(FACES_DB):
+            for f in os.listdir(FACES_DB):
+                st.write(f"✅ {f}")
 
- elif menu == "🎥 Live Monitoring":
+elif menu == "🎥 Live Monitoring":
     st.header("Live AI Safety Feed")
-    elif menu == "🎥 Live Monitoring":
-    st.header("Live AI Safety Feed")
-    
-    # STUN servers add karne se connection fast aur stable ho jata hai
     webrtc_streamer(
         key="cam", 
         mode=WebRtcMode.SENDRECV, 
         video_processor_factory=lambda: VideoProcessor(target_email),
-        rtc_configuration={  # Ye hissa connection error khatam karega
-            "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
-        },
-        media_stream_constraints={
-            "video": True, 
-            "audio": False
-        },
-        async_processing=True, # Ise True kar dein taaki interface lag na kare
+        rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+        media_stream_constraints={"video": True, "audio": False},
+        async_processing=True
     )
+
+elif menu == "📁 Batch Processing":
+    st.header("📁 Image Batch Analysis")
+    uploaded_files = st.file_uploader("Upload Images", type=['jpg', 'png', 'jpeg'], accept_multiple_files=True)
+    
+    if uploaded_files:
+        st.write(f"Processing {len(uploaded_files)} images...")
+        for uploaded_file in uploaded_files:
+            file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+            frame = cv2.imdecode(file_bytes, 1)
+            
+            with st.spinner(f"Analyzing {uploaded_file.name}..."):
+                processed_frame = run_detection(frame, target_email)
+                st.image(cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB), caption=f"Result: {uploaded_file.name}", use_container_width=True)
