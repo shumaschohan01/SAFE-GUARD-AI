@@ -13,7 +13,7 @@ from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
 from deepface import DeepFace # DeepFace ko requirements.txt mein lazmi rakhein
 
 # --- CONFIGURATION ---
-API_URL = st.secrets.get("API_URL", "http://127.0.0.1:8000/predict/")
+API_URL = st.secrets.get("https://shumaschohan-safeguard-api.hf.space/predict/")
 N8N_URL = st.secrets.get("N8N_URL", "http://localhost:5678/webhook/safety-alert")
 FACES_DB = "worker_faces"
 
