@@ -13,14 +13,13 @@ from datetime import datetime
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
 
 # --- CONFIGURATION ---
-API_URL = "https://shumaschohan-safeguard-ai.hf.space/predict/"
+API_URL = "https://shumaschohan-safeguard-api.hf.space/predict/"
 N8N_URL = "https://eom4pk834n2y9tj.m.pipedream.net"
 FACES_DB = "worker_faces"
-# Check karein ke rasta mojud hai ya nahi
+
 if not os.path.exists(FACES_DB):
     os.makedirs(FACES_DB)
 elif os.path.isfile(FACES_DB):
-    # Agar ghalti se is naam ki koi file ban gayi hai, toh usey delete karke folder banayein
     os.remove(FACES_DB)
     os.makedirs(FACES_DB)
 
@@ -70,62 +69,33 @@ def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
 
 def run_detection(frame, user_email):
     try:
-        # 1. Image encoding
         _, img_encoded = cv2.imencode('.jpg', frame)
-        
-        # 2. API Request
         response = requests.post(API_URL, files={'file': img_encoded.tobytes()}, timeout=8)
-        
         if response.status_code == 200:
             data = response.json()
-            # Debugging ke liye (Sirf test karte waqt uncomment karein):
-            # st.sidebar.write(data) 
-            
             detections = data.get('detections', [])
-            
             for det in detections:
                 label = str(det.get('class', '')).lower()
                 conf = float(det.get('conf', 0))
                 bbox = det.get('bbox', [0, 0, 0, 0])
-                
-                # Confidence Threshold (Kam az kam 40% confidence ho)
-                if conf < 0.40:
-                    continue
-
+                if conf < 0.40: continue
                 x1, y1, x2, y2 = map(int, bbox)
-
-                # 3. Violation Keywords Check (Broadened)
                 violation_keywords = ["no", "missing", "unsafe", "without", "off", "violation"]
                 is_unsafe = any(word in label for word in violation_keywords)
-
                 worker_info = "Unknown_N/A"
-                
                 if is_unsafe:
-                    # Face Identify sirf violation par karein
                     face_crop = frame[max(0, y1):y2, max(0, x1):x2]
-                    if face_crop.size > 0:
-                        worker_info = identify_worker(face_crop)
-                    
-                    # Report Save karein
+                    if face_crop.size > 0: worker_info = identify_worker(face_crop)
                     save_to_report(label, conf, True, worker_info, user_email)
-                    color = (0, 0, 255)  # Red for Violation
+                    color = (0, 0, 255)
                 else:
-                    color = (0, 255, 0)  # Green for Safe
-
-                # 4. Drawing
+                    color = (0, 255, 0)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
                 label_text = f"ALERT: {label}" if is_unsafe else label
-                cv2.putText(frame, f"{label_text} ({conf:.2f})", (x1, y1-10), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-        else:
-            print(f"API Error: Status {response.status_code}")
-            
-    except Exception as e:
-        print(f"Detailed Detection Error: {e}")
-        
+                cv2.putText(frame, f"{label_text} ({conf:.2f})", (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+    except: pass
     return frame
 
-# --- WEBRTC PROCESSOR ---
 class VideoProcessor(VideoProcessorBase):
     def __init__(self, user_email):
         self.user_email = user_email
@@ -149,10 +119,13 @@ if menu == "📊 Analytics":
     conn.close()
 
     if not df.empty:
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
         c1, c2 = st.columns(2)
         with c1:
-            st.subheader("Equipment Violations Count")
-            st.bar_chart(df['equipment'].value_counts())
+            st.subheader("Violation Trend (Timeline)")
+            # Line Graph for Trend
+            trend_df = df.resample('H', on='timestamp').count()['id']
+            st.line_chart(trend_df)
         with c2:
             st.subheader("Violation Distribution (%)")
             fig, ax = plt.subplots()
@@ -169,15 +142,25 @@ elif menu == "👤 Worker Database":
     with col1:
         name = st.text_input("Worker Name")
         wid = st.text_input("Worker ID")
-        img_file = st.camera_input("Take Photo")
-        if st.button("Register") and img_file and name:
-            Image.open(img_file).save(os.path.join(FACES_DB, f"{name}_{wid}.jpg"))
+        
+        reg_mode = st.radio("Registration Mode", ["Upload Photo", "Take Photo"])
+        img_file = None
+        if reg_mode == "Upload Photo":
+            img_file = st.file_uploader("Upload Worker Image", type=['jpg', 'png', 'jpeg'])
+        else:
+            img_file = st.camera_input("Take Photo")
+
+        if st.button("Register Worker") and img_file and name:
+            safe_name = name.replace(" ", "_")
+            img_path = os.path.join(FACES_DB, f"{safe_name}_{wid}.jpg")
+            Image.open(img_file).save(img_path)
             st.success(f"Worker {name} Registered Successfully!")
     with col2:
-        st.subheader("Existing Workers")
+        st.subheader("Registered Workers List")
         if os.path.exists(FACES_DB):
             for f in os.listdir(FACES_DB):
-                st.write(f"✅ {f}")
+                if f.endswith(('.jpg', '.png', '.jpeg')):
+                    st.write(f"✅ {f.split('.')[0]}")
 
 elif menu == "🎥 Live Monitoring":
     st.header("Live AI Safety Feed")
@@ -192,14 +175,11 @@ elif menu == "🎥 Live Monitoring":
 
 elif menu == "📁 Batch Processing":
     st.header("📁 Image Batch Analysis")
-    uploaded_files = st.file_uploader("Upload Images", type=['jpg', 'png', 'jpeg'], accept_multiple_files=True)
-    
+    uploaded_files = st.file_uploader("Upload Images for Detection", type=['jpg', 'png', 'jpeg'], accept_multiple_files=True)
     if uploaded_files:
-        st.write(f"Processing {len(uploaded_files)} images...")
         for uploaded_file in uploaded_files:
             file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
             frame = cv2.imdecode(file_bytes, 1)
-            
             with st.spinner(f"Analyzing {uploaded_file.name}..."):
                 processed_frame = run_detection(frame, target_email)
                 st.image(cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB), caption=f"Result: {uploaded_file.name}", use_container_width=True)
