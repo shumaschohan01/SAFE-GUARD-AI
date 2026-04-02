@@ -8,5 +8,4 @@ av
 pillow
 deepface
 tf-keras
-protobuf==5.29.3
 matplotlib
