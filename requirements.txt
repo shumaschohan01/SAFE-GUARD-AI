@@ -1,5 +1,12 @@
 streamlit
 streamlit-webrtc
+opencv-python-headless
 requests
 numpy
+pandas
+av
 pillow
+deepface
+tf-keras
+protobuf==5.29.3
+matplotlib
