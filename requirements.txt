@@ -1,10 +1,10 @@
-streamlit
-streamlit-webrtc
-opencv-python-headless
-requests
-pandas
-plotly
+fastapi
+uvicorn
 ultralytics
+python-multipart
+opencv-python-headless
+numpy
+pillow
 deepface
 tf-keras
-av
+protobuf==5.29.3
