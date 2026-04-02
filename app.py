@@ -70,26 +70,59 @@ def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
 
 def run_detection(frame, user_email):
     try:
+        # 1. Image encoding
         _, img_encoded = cv2.imencode('.jpg', frame)
-        response = requests.post(API_URL, files={'file': img_encoded.tobytes()}, timeout=6)
+        
+        # 2. API Request
+        response = requests.post(API_URL, files={'file': img_encoded.tobytes()}, timeout=8)
+        
         if response.status_code == 200:
-            detections = response.json().get('detections', [])
+            data = response.json()
+            # Debugging ke liye (Sirf test karte waqt uncomment karein):
+            # st.sidebar.write(data) 
+            
+            detections = data.get('detections', [])
+            
             for det in detections:
-                label, conf = det['class'], det['conf']
-                x1, y1, x2, y2 = map(int, det['bbox'])
-                is_unsafe = any(w in label.lower() for w in ["no", "missing", "unsafe"])
+                label = str(det.get('class', '')).lower()
+                conf = float(det.get('conf', 0))
+                bbox = det.get('bbox', [0, 0, 0, 0])
                 
-                worker_info = "Unknown"
-                if is_unsafe:
-                    face_crop = frame[max(0,y1):y2, max(0,x1):x2]
-                    if face_crop.size > 0: worker_info = identify_worker(face_crop)
-                    save_to_report(label, conf, True, worker_info, user_email)
+                # Confidence Threshold (Kam az kam 40% confidence ho)
+                if conf < 0.40:
+                    continue
 
-                color = (0, 0, 255) if is_unsafe else (0, 255, 0)
+                x1, y1, x2, y2 = map(int, bbox)
+
+                # 3. Violation Keywords Check (Broadened)
+                violation_keywords = ["no", "missing", "unsafe", "without", "off", "violation"]
+                is_unsafe = any(word in label for word in violation_keywords)
+
+                worker_info = "Unknown_N/A"
+                
+                if is_unsafe:
+                    # Face Identify sirf violation par karein
+                    face_crop = frame[max(0, y1):y2, max(0, x1):x2]
+                    if face_crop.size > 0:
+                        worker_info = identify_worker(face_crop)
+                    
+                    # Report Save karein
+                    save_to_report(label, conf, True, worker_info, user_email)
+                    color = (0, 0, 255)  # Red for Violation
+                else:
+                    color = (0, 255, 0)  # Green for Safe
+
+                # 4. Drawing
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
-                cv2.putText(frame, f"{label} {conf:.2f}", (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+                label_text = f"ALERT: {label}" if is_unsafe else label
+                cv2.putText(frame, f"{label_text} ({conf:.2f})", (x1, y1-10), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+        else:
+            print(f"API Error: Status {response.status_code}")
+            
     except Exception as e:
-        print(f"Detection Error: {e}")
+        print(f"Detailed Detection Error: {e}")
+        
     return frame
 
 # --- WEBRTC PROCESSOR ---
