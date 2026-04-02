@@ -270,12 +270,16 @@ elif menu == "👤 Worker Database":
 
 
 elif menu == "🎥 Live Monitoring":
-    st.header("Live AI Safety Feed")
+    st.header("🎥 Live Safety Feed")
     webrtc_streamer(
-        key="cam", 
-        mode=WebRtcMode.SENDRECV, 
+        key="cam", mode=WebRtcMode.SENDRECV,
         video_processor_factory=lambda: VideoProcessor(target_email),
-        rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+        rtc_configuration={
+            "iceServers": [
+                {"urls": ["stun:stun.l.google.com:19302"]},
+                {"urls": ["stun:stun1.l.google.com:19302"]}
+            ]
+        },
         media_stream_constraints={"video": True, "audio": False},
         async_processing=True
     )
