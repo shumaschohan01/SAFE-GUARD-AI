@@ -1,5 +1,5 @@
 import streamlit as st
-from PIL import Image
+import cv2
 import requests
 import numpy as np
 import pandas as pd
@@ -7,9 +7,8 @@ import sqlite3
 import os
 import time
 import av
-import cv2
-import io
 import matplotlib.pyplot as plt
+from PIL import Image
 from datetime import datetime
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
 
@@ -29,11 +28,12 @@ def init_db():
                      timestamp TEXT, type TEXT, status TEXT,
                      equipment TEXT, worker_name TEXT,
                      worker_id TEXT, confidence REAL)''')
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
 
 init_db()
 
-# --- DETECTION & ANALYTICS HELPER ---
+# --- HELPER FUNCTIONS ---
 def identify_worker(face_img):
     try:
         from deepface import DeepFace
@@ -47,28 +47,54 @@ def identify_worker(face_img):
     except: pass
     return "Unknown_N/A"
 
+def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
+    if not is_unsafe: return
+    try:
+        name, wid = worker_info.split("_") if "_" in worker_info else (worker_info, "N/A")
+        clean_eq = v_type.lower().replace("no", "").replace("-", "").strip().capitalize()
+        conn = sqlite3.connect("safety_violations.db")
+        conn.execute('''INSERT INTO violations (timestamp, type, status, equipment, worker_name, worker_id, confidence) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                     (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), v_type, "⚠️ Unsafe", clean_eq, name, wid, float(v_conf)))
+        conn.commit()
+        conn.close()
+        
+        # Email Alert Logic (Pipedream)
+        if v_conf > 0.6:
+            payload = {"worker": name, "equipment": clean_eq, "email": user_email}
+            requests.post(N8N_URL, json=payload, timeout=1)
+    except: pass
+
 def run_detection(frame, user_email):
     try:
         _, img_encoded = cv2.imencode('.jpg', frame)
-        response = requests.post(API_URL, files={'file': img_encoded.tobytes()}, timeout=5)
+        response = requests.post(API_URL, files={'file': img_encoded.tobytes()}, timeout=4)
         if response.status_code == 200:
             detections = response.json().get('detections', [])
             for det in detections:
                 label, conf = det['class'], det['conf']
                 x1, y1, x2, y2 = map(int, det['bbox'])
-                is_unsafe = any(w in label.lower() for w in ["no", "missing", "unsafe", "without"])
+                is_unsafe = any(w in label.lower() for w in ["no", "missing", "unsafe"])
                 
-                worker_info = "Unknown_N/A"
+                worker_info = "Unknown"
                 if is_unsafe:
                     face_crop = frame[max(0,y1):y2, max(0,x1):x2]
                     if face_crop.size > 0: worker_info = identify_worker(face_crop)
-                    # Logic to save to DB (Calling save_to_report function)
-                
+                    save_to_report(label, conf, True, worker_info, user_email)
+
                 color = (0, 0, 255) if is_unsafe else (0, 255, 0)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
-                cv2.putText(frame, f"{label}", (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                cv2.putText(frame, f"{label}", (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
     except: pass
     return frame
+
+# --- WEBRTC PROCESSOR ---
+class VideoProcessor(VideoProcessorBase):
+    def __init__(self, user_email):
+        self.user_email = user_email
+    def recv(self, frame):
+        img = frame.to_ndarray(format="bgr24")
+        return av.VideoFrame.from_ndarray(run_detection(img, self.user_email), format="bgr24")
 
 # --- UI SETUP ---
 st.set_page_config(page_title="Safe-Guard AI", layout="wide")
@@ -76,45 +102,46 @@ st.set_page_config(page_title="Safe-Guard AI", layout="wide")
 with st.sidebar:
     st.title("🛡️ SAFE-GUARD AI")
     menu = st.radio("Navigation", ["📊 Analytics", "👤 Worker Database", "🎥 Live Monitoring"])
-    target_email = st.text_input("Alert Email", placeholder="example@gmail.com")
+    target_email = st.text_input("Alert Email", placeholder="user@example.com")
 
 # --- PAGES ---
 if menu == "📊 Analytics":
-    st.header("📊 Violation Insights & Visualizations")
+    st.header("📊 Violation Insights")
     conn = sqlite3.connect("safety_violations.db")
     df = pd.read_sql_query("SELECT * FROM violations", conn)
     conn.close()
 
     if not df.empty:
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("Equipment-wise Violations")
-            # Bar Chart
-            equip_counts = df['equipment'].value_counts()
-            st.bar_chart(equip_counts)
-        
-        with col2:
-            st.subheader("Violation Distribution")
-            # Pie Chart using Matplotlib
+        c1, c2 = st.columns(2)
+        with c1:
+            st.subheader("Equipment Violations Count")
+            st.bar_chart(df['equipment'].value_counts())
+        with c2:
+            st.subheader("Violation Distribution (%)")
             fig, ax = plt.subplots()
-            df['type'].value_counts().plot.pie(autopct='%1.1f%%', ax=ax)
+            df['equipment'].value_counts().plot.pie(autopct='%1.1f%%', ax=ax)
             st.pyplot(fig)
-
-        st.subheader("Recent Activity Log")
-        st.dataframe(df.sort_values(by='timestamp', ascending=False), use_container_width=True)
+        
+        st.subheader("Detailed Logs")
+        st.dataframe(df, use_container_width=True)
     else:
-        st.info("No violation data available yet.")
+        st.info("Abhi tak koi violation data nahi mila.")
 
 elif menu == "👤 Worker Database":
-    # (Puran wala registration code yahan rakhien...)
-    st.info("Worker registration module active.")
+    st.header("👤 Register New Worker")
+    name = st.text_input("Worker Name")
+    wid = st.text_input("Worker ID")
+    img_file = st.camera_input("Take Photo")
+    if st.button("Register") and img_file and name:
+        Image.open(img_file).save(os.path.join(FACES_DB, f"{name}_{wid}.jpg"))
+        st.success("Worker Registered!")
 
 elif menu == "🎥 Live Monitoring":
-    st.header("Live AI Safety Guard")
+    st.header("Live AI Safety Feed")
     webrtc_streamer(
         key="cam", 
         mode=WebRtcMode.SENDRECV, 
-        video_processor_factory=lambda: VideoProcessor(target_email) if 'VideoProcessor' in globals() else None,
-        async_processing=False 
+        video_processor_factory=lambda: VideoProcessor(target_email),
+        media_stream_constraints={"video": True, "audio": False},
+        async_processing=False
     )
