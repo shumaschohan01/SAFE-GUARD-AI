@@ -13,7 +13,7 @@ from datetime import datetime
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
 
 # --- CONFIGURATION ---
-API_URL = "https://shumaschohan-safeguard-api.hf.space/predict/"
+API_URL = "https://shumaschohan-safeguard-ai.hf.space/predict/"
 N8N_URL = "https://eom4pk834n2y9tj.m.pipedream.net"
 FACES_DB = "worker_faces"
 
