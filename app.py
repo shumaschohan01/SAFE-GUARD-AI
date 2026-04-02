@@ -7,6 +7,7 @@ import sqlite3
 import os
 import time
 import av
+import plotly.express as px
 import matplotlib.pyplot as plt
 from PIL import Image
 from datetime import datetime
@@ -193,6 +194,53 @@ if menu == "📊 Analytics":
     else:
         st.info("Abhi tak koi violation data record nahi hua. Live Monitoring start karein!")
 
+
+    st.header("📊 Real-Time Safety Dashboard")
+    
+    # Database se data load karein
+    conn = sqlite3.connect("safety_violations.db")
+    df = pd.read_sql_query("SELECT * FROM violations", conn)
+    conn.close()
+
+    if not df.empty:
+        # Date conversion aur preprocessing
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df['date'] = df['timestamp'].dt.date
+        
+        # --- 📅 AI SAFETY CALENDAR LOGIC ---
+        st.subheader("📅 Monthly Safety Compliance Calendar")
+        
+        # Har din ki total violations count karein
+        daily_counts = df.groupby('date').size().reset_index(name='Violations')
+        
+        # Calendar Heatmap Chart
+        # Hum 'Violations' ke mutabiq color set karenge (Kam = Green, Zyada = Red)
+        fig_cal = px.density_heatmap(
+            daily_counts, 
+            x="date", 
+            y=[1]*len(daily_counts), # Dummy Y-axis for horizontal look
+            z="Violations",
+            color_continuous_scale=["#00ff00", "#ffff00", "#ff0000"], # Green -> Yellow -> Red
+            labels={'z': 'Violations Count', 'date': 'Date'},
+            height=200
+        )
+        
+        # UI ko saaf dikhane ke liye axis hide karein
+        fig_cal.update_yaxes(showticklabels=False, title="")
+        fig_cal.update_layout(margin=dict(l=20, r=20, t=20, b=20))
+        
+        st.plotly_chart(fig_cal, use_container_width=True)
+        
+        st.info("💡 **Tip:** Green box matlab 'Safe Day', Red box matlab 'High Violations Day'.")
+        
+        # --- PURANE METRICS AUR GRAPHS ---
+        st.markdown("---")
+        col1, col2, col3 = st.columns(3)
+        # ... (Aapka purana metrics code yahan aayega) ...
+
+    else:
+        st.info("Calendar display karne ke liye abhi data mojud nahi hai.")
+
 elif menu == "👤 Worker Database":
     st.header("👤 Register New Worker")
     col1, col2 = st.columns(2)
@@ -218,6 +266,8 @@ elif menu == "👤 Worker Database":
             for f in os.listdir(FACES_DB):
                 if f.endswith(('.jpg', '.png', '.jpeg')):
                     st.write(f"✅ {f.split('.')[0]}")
+
+
 
 elif menu == "🎥 Live Monitoring":
     st.header("Live AI Safety Feed")
