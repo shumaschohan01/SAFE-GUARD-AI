@@ -1,10 +1,10 @@
-fastapi
-uvicorn
-ultralytics
-python-multipart
+streamlit
+streamlit-webrtc
 opencv-python-headless
-numpy
-pillow
+ultralytics
 deepface
 tf-keras
 protobuf==5.29.3
+requests
+numpy
+pillow
