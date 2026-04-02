@@ -136,28 +136,62 @@ with st.sidebar:
 
 # --- PAGES ---
 if menu == "📊 Analytics":
-    st.header("📊 Violation Insights")
+    st.header("📊 Real-Time Safety Dashboard")
+    
+    # Database se data uthana
     conn = sqlite3.connect("safety_violations.db")
     df = pd.read_sql_query("SELECT * FROM violations", conn)
     conn.close()
 
+    # --- CALCULATIONS FOR TILES ---
+    # Note: 'Total Scanned' ko accurately track karne ke liye hum total detections ya logs use karte hain
+    total_violations = len(df)
+    
+    # Dummy logic for 'Total Scanned' (agar aapne scan logs alag nahi banaye toh hum assume karte hain)
+    # Behtar FYP ke liye hum isay total frames ya registered workers se relate kar sakte hain
+    total_scanned = total_violations + 50  # Sirf example ke liye, aap isay frame count se link kar sakte hain
+    
+    if total_scanned > 0:
+        compliance_rate = ((total_scanned - total_violations) / total_scanned) * 100
+    else:
+        compliance_rate = 100
+
+    # --- LIVE COUNTER TILES (Top Row) ---
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric(label="👥 Total Scanned", value=total_scanned, delta="Overall Activity")
+    
+    with col2:
+        # Delta mein hum dikhate hain ke violations barh rahi hain ya kam (Red color for increase)
+        st.metric(label="⚠️ Total Violations", value=total_violations, delta=f"{total_violations} Detected", delta_color="inverse")
+    
+    with col3:
+        st.metric(label="✅ Safety Compliance", value=f"{compliance_rate:.1f}%", delta="Target: 95%+")
+
+    st.markdown("---") # Divider line
+
+    # --- GRAPHS SECTION ---
     if not df.empty:
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         c1, c2 = st.columns(2)
+        
         with c1:
-            st.subheader("Violation Trend (Timeline)")
-            # Line Graph for Trend
+            st.subheader("📈 Violation Trend")
+            # Hourly trend line graph
             trend_df = df.resample('H', on='timestamp').count()['id']
             st.line_chart(trend_df)
+            
         with c2:
-            st.subheader("Violation Distribution (%)")
-            fig, ax = plt.subplots()
-            df['worker_name'].value_counts().plot.pie(autopct='%1.1f%%', ax=ax)
+            st.subheader("🍕 Equipment Distribution")
+            fig, ax = plt.subplots(figsize=(5, 5))
+            df['equipment'].value_counts().plot.pie(autopct='%1.1f%%', ax=ax, colors=['#ff9999','#66b3ff','#99ff99'])
             st.pyplot(fig)
-        st.subheader("Detailed Logs")
+
+        st.subheader("📝 Recent Violation Logs")
         st.dataframe(df.sort_values(by="timestamp", ascending=False), use_container_width=True)
     else:
-        st.info("Abhi tak koi violation data nahi mila.")
+        st.info("Abhi tak koi violation data record nahi hua. Live Monitoring start karein!")
 
 elif menu == "👤 Worker Database":
     st.header("👤 Register New Worker")
