@@ -16,8 +16,12 @@ from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
 API_URL = "https://shumaschohan-safeguard-ai.hf.space/predict/"
 N8N_URL = "https://eom4pk834n2y9tj.m.pipedream.net"
 FACES_DB = "worker_faces"
-
-if not os.path.exists(FACES_DB): 
+# Check karein ke rasta mojud hai ya nahi
+if not os.path.exists(FACES_DB):
+    os.makedirs(FACES_DB)
+elif os.path.isfile(FACES_DB):
+    # Agar ghalti se is naam ki koi file ban gayi hai, toh usey delete karke folder banayein
+    os.remove(FACES_DB)
     os.makedirs(FACES_DB)
 
 # --- DATABASE SETUP ---
