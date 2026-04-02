@@ -138,10 +138,20 @@ elif menu == "👤 Worker Database":
 
 elif menu == "🎥 Live Monitoring":
     st.header("Live AI Safety Feed")
+    elif menu == "🎥 Live Monitoring":
+    st.header("Live AI Safety Feed")
+    
+    # STUN servers add karne se connection fast aur stable ho jata hai
     webrtc_streamer(
         key="cam", 
         mode=WebRtcMode.SENDRECV, 
         video_processor_factory=lambda: VideoProcessor(target_email),
-        media_stream_constraints={"video": True, "audio": False},
-        async_processing=False
+        rtc_configuration={  # Ye hissa connection error khatam karega
+            "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+        },
+        media_stream_constraints={
+            "video": True, 
+            "audio": False
+        },
+        async_processing=True, # Ise True kar dein taaki interface lag na kare
     )
