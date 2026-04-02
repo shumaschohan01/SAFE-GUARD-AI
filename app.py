@@ -272,17 +272,31 @@ elif menu == "👤 Worker Database":
 elif menu == "🎥 Live Monitoring":
     st.header("🎥 Live Safety Feed")
     webrtc_streamer(
-        key="cam", mode=WebRtcMode.SENDRECV,
-        video_processor_factory=lambda: VideoProcessor(target_email),
-        rtc_configuration={
-            "iceServers": [
-                {"urls": ["stun:stun.l.google.com:19302"]},
-                {"urls": ["stun:stun1.l.google.com:19302"]}
-            ]
+    key="cam",
+    mode=WebRtcMode.SENDRECV,
+    video_processor_factory=lambda: VideoProcessor(target_email),
+    rtc_configuration={
+        "iceServers": [
+            {"urls": ["stun:stun.l.google.com:19302"]},
+            {"urls": ["stun:stun1.l.google.com:19302"]},
+            # Agar aapke paas TURN server ho toh yahan add karein:
+            # {
+            #     "urls": ["turn:your-turn-server.com:3478"],
+            #     "username": "your-username",
+            #     "credential": "your-password"
+            # }
+        ]
+    },
+    media_stream_constraints={
+        "video": {
+            "width": {"ideal": 640}, # Resolution thodi kam rakhein taaki load fast ho
+            "height": {"ideal": 480},
+            "frameRate": {"ideal": 15} # 15 FPS kafi hai detection ke liye
         },
-        media_stream_constraints={"video": True, "audio": False},
-        async_processing=True
-    )
+        "audio": False
+    },
+    async_processing=True,
+)
 
 elif menu == "📁 Batch Processing":
     st.header("📁 Image Batch Analysis")
