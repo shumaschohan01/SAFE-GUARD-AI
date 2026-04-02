@@ -275,23 +275,12 @@ elif menu == "🎥 Live Monitoring":
     key="cam",
     mode=WebRtcMode.SENDRECV,
     video_processor_factory=lambda: VideoProcessor(target_email),
-    rtc_configuration={
-        "iceServers": [
-            {"urls": ["stun:stun.l.google.com:19302"]},
-            {"urls": ["stun:stun1.l.google.com:19302"]},
-            # Agar aapke paas TURN server ho toh yahan add karein:
-            # {
-            #     "urls": ["turn:your-turn-server.com:3478"],
-            #     "username": "your-username",
-            #     "credential": "your-password"
-            # }
-        ]
-    },
+    rtc_configuration=rtc_configuration,
     media_stream_constraints={
         "video": {
-            "width": {"ideal": 640}, # Resolution thodi kam rakhein taaki load fast ho
-            "height": {"ideal": 480},
-            "frameRate": {"ideal": 15} # 15 FPS kafi hai detection ke liye
+            "width": {"ideal": 480},   # Resolution kam rakhein (640 se 480)
+            "height": {"ideal": 360},
+            "frameRate": {"ideal": 10}  # 10 FPS kafi hai detection ke liye
         },
         "audio": False
     },
