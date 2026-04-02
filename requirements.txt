@@ -9,3 +9,5 @@ pillow
 deepface
 tf-keras
 matplotlib
+plotly
+
