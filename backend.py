@@ -18,7 +18,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-model = YOLO("model/PEP-DETECTION.pt")
+model = YOLO("PEP-DETECTION.pt")
 
 @app.post("/predict/")
 async def predict(file: UploadFile = File(...)):
