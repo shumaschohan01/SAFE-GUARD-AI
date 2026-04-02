@@ -1,5 +1,6 @@
 import streamlit as st
 from PIL import Image
+import cv2
 import requests
 import numpy as np
 import pandas as pd
@@ -152,12 +153,16 @@ elif menu == "👤 Worker Database":
 
 elif menu == "🎥 Live Monitoring":
     st.header("Live AI Guard")
+   # app.py ke aakhir mein ye change karein
     webrtc_streamer(
     key="cam", 
     mode=WebRtcMode.SENDRECV, 
     video_processor_factory=lambda: VideoProcessor(target_email),
-    media_stream_constraints={"video": True, "audio": False},
-    # async_processing ko hata dein agar masla ho
+    media_stream_constraints={
+        "video": True, 
+        "audio": False
+    },
+    async_processing=False  # Isay False kar dein stable connection ke liye
 )
 
 elif menu == "📁 Batch":
