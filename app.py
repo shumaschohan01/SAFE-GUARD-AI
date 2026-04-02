@@ -152,7 +152,7 @@ elif menu == "👤 Worker Database":
 
 elif menu == "🎥 Live Monitoring":
     st.header("Live AI Guard")
-   webrtc_streamer(
+    webrtc_streamer(
     key="cam", 
     mode=WebRtcMode.SENDRECV, 
     video_processor_factory=lambda: VideoProcessor(target_email),
