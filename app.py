@@ -96,7 +96,7 @@ def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
         # 2. Email Alert Logic
         # Sirf tab email bhejein jab confidence high ho aur email address provide kiya gaya ho
        # --- CHANGE 1: Dynamic Payload ---
-    if v_conf > 0.75 and user_email and "@" in user_email:
+     if v_conf > 0.75 and user_email and "@" in user_email:
         payload = {
             "worker": name,
             "worker_id": wid,
