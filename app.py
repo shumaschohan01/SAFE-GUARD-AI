@@ -39,16 +39,43 @@ init_db()
 
 # --- HELPER FUNCTIONS ---
 def identify_worker(face_img):
-  try:
-    from deepface import DeepFace
-    if not os.path.exists(FACES_DB) or not os.listdir(FACES_DB): return "Unknown_N/A"
+    try:
+        from deepface import DeepFace
+        import os
+        import cv2
+
+        # 1. Check karein ke database empty toh nahi
+        if not os.path.exists(FACES_DB) or not os.listdir(FACES_DB):
+            return "Unknown_N/A"
+
+        # 2. Temporary file save karein
         temp_path = "temp_face.jpg"
         cv2.imwrite(temp_path, face_img)
-        results = DeepFace.find(img_path=temp_path, db_path=FACES_DB, enforce_detection=False, silent=True)
+
+        # 3. DeepFace find function call karein
+        results = DeepFace.find(
+            img_path=temp_path, 
+            db_path=FACES_DB, 
+            enforce_detection=False, 
+            silent=True
+        )
+
+        # 4. Result check aur cleanup
         if len(results) > 0 and not results[0].empty:
-           full_path = results[0].iloc[0]['identity']
+            full_path = results[0].iloc[0]['identity']
+            # Temp file delete karein kaam khatam hone par
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
             return os.path.basename(full_path).split('.')[0]
-  except: pass
+
+        # Agar koi match na mile toh temp file delete karein
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+    except Exception as e:
+        print(f"Error in identification: {e}")
+        pass
+
     return "Unknown_N/A"
 
 
