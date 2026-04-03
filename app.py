@@ -119,32 +119,71 @@ with st.sidebar:
     target_email = st.text_input("Alert Email", placeholder="user@example.com").strip()
 
 if menu == "📊 Analytics":
-    st.header("📊 Dashboard")
+    st.header("📊 Real-Time Safety Dashboard")
 
     conn = sqlite3.connect("safety_violations.db")
     df = pd.read_sql_query("SELECT * FROM violations", conn)
     conn.close()
 
+    # --- KPI METRICS ---
     total_violations = len(df)
-    total_scanned = total_violations + 50  # 🔴 CHANGED dummy logic
-
+    total_scanned = total_violations + 50  # Dummy logic
     compliance = ((total_scanned - total_violations) / total_scanned * 100) if total_scanned else 100
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("👥 Scanned", total_scanned)
-    c2.metric("⚠️ Violations", total_violations)
-    c3.metric("✅ Compliance", f"{compliance:.1f}%")
+    c1.metric("👥 Total Scanned", total_scanned)
+    c2.metric("⚠️ Total Violations", total_violations, delta=f"{total_violations}", delta_color="inverse")
+    c3.metric("✅ Compliance Rate", f"{compliance:.1f}%")
 
     if not df.empty:
         df['timestamp'] = pd.to_datetime(df['timestamp'])
+        
+        # --- ROW 1: TREND & PIE CHART ---
+        col_left, col_right = st.columns([2, 1])
+        
+        with col_left:
+            st.subheader("📈 Violation Trend (Hourly)")
+            trend_df = df.resample('H', on='timestamp').count()['id'].reset_index()
+            fig_line = px.line(trend_df, x='timestamp', y='id', labels={'id': 'Violations'}, template="plotly_dark")
+            st.plotly_chart(fig_line, use_container_width=True)
 
-        st.line_chart(df.resample('H', on='timestamp').count()['id'])
+        with col_right:
+            st.subheader("👤 Violations by Worker")
+            # Interactive Plotly Pie Chart
+            fig_pie = px.pie(df, names='worker_name', hole=0.4, template="plotly_dark")
+            fig_pie.update_traces(textinfo='percent+label')
+            st.plotly_chart(fig_pie, use_container_width=True)
 
-        fig, ax = plt.subplots()
-        df['worker_name'].value_counts().plot.pie(autopct='%1.1f%%', ax=ax)
-        st.pyplot(fig)
+        # --- ROW 2: DETAILED TABLE ---
+        st.subheader("📝 Detailed Violation Logs")
+        st.dataframe(df.sort_values(by="timestamp", ascending=False), use_container_width=True)
 
-        st.dataframe(df)
+        # --- NEW ANALYSIS BELOW THE TABLE ---
+        st.markdown("---")
+        st.header("🔍 Deep Dive Analysis")
+        
+        analysis_col1, analysis_col2 = st.columns(2)
+
+        with analysis_col1:
+            st.subheader("🛠️ Equipment Analysis")
+            # Kaunsa safety gear sabse zyada miss ho raha hai
+            eq_counts = df['equipment'].value_counts().reset_index()
+            eq_counts.columns = ['Equipment', 'Count']
+            fig_bar = px.bar(eq_counts, x='Equipment', y='Count', color='Count', 
+                             color_continuous_scale='Reds', template="plotly_dark")
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+        with analysis_col2:
+            st.subheader("⏰ Peak Violation Hours")
+            # Kis time par sabse zyada violations ho rahi hain
+            df['hour'] = df['timestamp'].dt.hour
+            hour_counts = df.groupby('hour').size().reset_index(name='Count')
+            fig_hour = px.bar(hour_counts, x='hour', y='Count', 
+                              labels={'hour': 'Hour of Day (24h)'}, template="plotly_dark")
+            st.plotly_chart(fig_hour, use_container_width=True)
+
+    else:
+        st.info("Abhi tak koi data record nahi hua. Monitoring start karein!")
 
 elif menu == "👤 Worker Database":
     st.header("👤 Worker Registration")
