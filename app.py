@@ -18,7 +18,13 @@ N8N_URL = "https://eom4pk834n2y9tj.m.pipedream.net"
 FACES_DB = "worker_faces"
 
 # 🔴 CHANGED: safe folder handling
-if not os.path.exists(FACES_DB):
+if os.path.exists(FACES_DB):
+    if not os.path.isdir(FACES_DB):
+        # Agar is naam ki koi file hai toh use delete karke folder banayein
+        os.remove(FACES_DB)
+        os.makedirs(FACES_DB)
+else:
+    # Agar exist hi nahi karta toh naya folder banayein
     os.makedirs(FACES_DB)
 
 # --- DATABASE ---
