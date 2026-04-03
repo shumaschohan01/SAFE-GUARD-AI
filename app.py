@@ -59,34 +59,63 @@ def identify_worker(face_img):
     return "Unknown_N/A"
 
 def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
-    if not is_unsafe: return
+    if not is_unsafe: 
+        return
     
     global worker_cooldowns
     current_time = time.time()
     
-    # 1 Minute Cooldown Check
-    if worker_info in worker_cooldowns:
-        if current_time - worker_cooldowns[worker_info] < 60:
-            return 
+    # --- SMART COOLDOWN LOGIC ---
+    if worker_info == "Unknown_N/A":
+        # Unknown workers ke liye sirf 2 second ka gap (taaki detection na ruke)
+        if "Unknown_N/A" in worker_cooldowns:
+            if current_time - worker_cooldowns["Unknown_N/A"] < 2:
+                return
+    else:
+        # Registered workers ke liye 1 minute (60s) ka gap
+        if worker_info in worker_cooldowns:
+            if current_time - worker_cooldowns[worker_info] < 60:
+                return 
 
     try:
-        name, wid = worker_info.split("_") if "_" in worker_info else (worker_info, "N/A")
+        # Worker details parse karein
+        if "_" in worker_info:
+            name, wid = worker_info.split("_")
+        else:
+            name, wid = worker_info, "N/A"
+            
         clean_eq = v_type.lower().replace("no", "").replace("-", "").strip().capitalize()
         
+        # 1. DATABASE SAVE
         conn = sqlite3.connect("safety_violations.db")
-        conn.execute('INSERT INTO violations (timestamp, type, status, equipment, worker_name, worker_id, confidence) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        conn.execute('''INSERT INTO violations (timestamp, type, status, equipment, worker_name, worker_id, confidence) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?)''',
                      (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), v_type, "⚠️ Unsafe", clean_eq, name, wid, float(v_conf)))
         conn.commit()
         conn.close()
         
-        worker_cooldowns[worker_info] = current_time # Update Timer
+        # 2. TIMER UPDATE
+        worker_cooldowns[worker_info] = current_time 
 
+        # 3. EMAIL ALERT (Sirf high confidence par)
         if v_conf > 0.75 and user_email and "@" in user_email:
-            payload = {"worker": name, "worker_id": wid, "violation": clean_eq, "confidence": f"{v_conf:.2f}",
-                       "time": datetime.now().strftime("%I:%M %p"), "email": user_email, "subject": f"⚠️ SAFETY ALERT: {clean_eq}"}
-            try: requests.post(N8N_URL, json=payload, timeout=2)
-            except: pass
-    except: pass
+            payload = {
+                "worker": name, 
+                "worker_id": wid, 
+                "violation": clean_eq,
+                "confidence": f"{v_conf:.2f}", 
+                "time": datetime.now().strftime("%I:%M %p"),
+                "email": user_email, 
+                "subject": f"⚠️ SAFETY ALERT: {clean_eq} Violation!"
+            }
+            try:
+                # Timeout kam rakha hai taaki video lag na kare
+                requests.post(N8N_URL, json=payload, timeout=2)
+            except:
+                pass
+                
+    except Exception as e:
+        print(f"Error in reporting: {e}")
 
 def run_detection(frame, user_email):
     try:
