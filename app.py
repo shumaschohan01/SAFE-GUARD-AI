@@ -38,7 +38,7 @@ def init_db():
 init_db()
 
 # --- HELPER FUNCTIONS ---
-#def identify_worker(face_img):
+def identify_worker(face_img):
   try:
      from deepface import DeepFace
         if not os.path.exists(FACES_DB) or not os.listdir(FACES_DB): return "Unknown_N/A"
