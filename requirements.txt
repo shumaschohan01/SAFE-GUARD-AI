@@ -1,10 +1,10 @@
-opencv-python-headless
-streamlit
-streamlit-webrtc
-plotly
+streamlit==1.31.0
+streamlit-webrtc==0.47.1
+opencv-python-headless==4.8.0.74
+av==10.0.0
+plotly==5.18.0
 pandas
 requests
 pillow
 matplotlib
 numpy
-av
