@@ -41,12 +41,27 @@ init_db()
 def identify_worker(face_img):
     try:
         from deepface import DeepFace
+        import os
+
         if not os.path.exists(FACES_DB) or not os.listdir(FACES_DB):
             return "Unknown_N/A"
 
+        # 🔴 YE LINE ZAROORI HAI: DeepFace ki purani cache delete karein taaki naya banda detect ho
+        pkl_path = os.path.join(FACES_DB, "representations_vgg_face.pkl")
+        if os.path.exists(pkl_path):
+            os.remove(pkl_path)
+
         temp_path = "temp_face.jpg"
         cv2.imwrite(temp_path, face_img)
-        results = DeepFace.find(img_path=temp_path, db_path=FACES_DB, enforce_detection=False, silent=True)
+        
+        # Identification start
+        results = DeepFace.find(
+            img_path=temp_path, 
+            db_path=FACES_DB, 
+            model_name='VGG-Face', 
+            enforce_detection=False, 
+            silent=True
+        )
 
         if len(results) > 0 and not results[0].empty:
             identity = results[0].iloc[0]['identity']
