@@ -17,12 +17,10 @@ API_URL = "https://shumaschohan-safeguard-ai.hf.space/predict/"
 N8N_URL = "https://eom4pk834n2y9tj.m.pipedream.net"
 FACES_DB = "worker_faces"
 
-# 🔴 GLOBAL COOLDOWN TRACKER (1-Minute Timer Logic)
-if 'worker_cooldowns' not in globals():
-    global worker_cooldowns
-    worker_cooldowns = {}
+# Cooldown Tracker Initialization
+if 'worker_cooldowns' not in st.session_state:
+    st.session_state.worker_cooldowns = {}
 
-# Folder handling
 if not os.path.exists(FACES_DB):
     os.makedirs(FACES_DB)
 
@@ -38,19 +36,19 @@ def init_db():
 init_db()
 
 # --- HELPER FUNCTIONS ---
-def identify_worker(face_img):
+def identify_worker(face_crop):
     try:
         from deepface import DeepFace
         if not os.path.exists(FACES_DB) or not os.listdir(FACES_DB):
             return "Unknown_N/A"
 
-        # 🔴 FIX: Delete DeepFace Cache to force refresh for new workers
+        # 🔴 FIX: Delete cache to recognize new workers immediately
         pkl_path = os.path.join(FACES_DB, "representations_vgg_face.pkl")
         if os.path.exists(pkl_path):
             os.remove(pkl_path)
 
         temp_path = "temp_face.jpg"
-        cv2.imwrite(temp_path, face_img)
+        cv2.imwrite(temp_path, face_crop)
         
         results = DeepFace.find(
             img_path=temp_path, 
@@ -61,9 +59,9 @@ def identify_worker(face_img):
         )
 
         if len(results) > 0 and not results[0].empty:
-            identity = results[0].iloc[0]['identity']
+            full_path = results[0].iloc[0]['identity']
             if os.path.exists(temp_path): os.remove(temp_path)
-            return os.path.basename(identity).split('.')[0]
+            return os.path.basename(full_path).split('.')[0]
         
         if os.path.exists(temp_path): os.remove(temp_path)
     except: pass
@@ -72,30 +70,30 @@ def identify_worker(face_img):
 def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
     if not is_unsafe: return
 
-    global worker_cooldowns
-    current_time = time.time()
+    now = time.time()
+    # 🔴 TIMER: Registered = 60s, Unknown = 2s
+    gap = 60 if worker_info != "Unknown_N/A" else 2
     
-    # 🔴 SMART COOLDOWN: Registered = 60s, Unknown = 2s
-    cooldown_period = 60 if worker_info != "Unknown_N/A" else 2
-    if worker_info in worker_cooldowns:
-        if current_time - worker_cooldowns[worker_info] < cooldown_period:
-            return 
+    last_seen = st.session_state.worker_cooldowns.get(worker_info, 0)
+    if now - last_seen < gap:
+        return 
 
     try:
         name, wid = worker_info.split("_") if "_" in worker_info else (worker_info, "N/A")
         clean_eq = v_type.lower().replace("no", "").replace("-", "").strip().capitalize()
 
         conn = sqlite3.connect("safety_violations.db")
-        conn.execute('INSERT INTO violations (timestamp, type, status, equipment, worker_name, worker_id, confidence) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        conn.execute('''INSERT INTO violations (timestamp, type, status, equipment, worker_name, worker_id, confidence) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?)''', 
                      (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), v_type, "⚠️ Unsafe", clean_eq, name, wid, float(v_conf)))
         conn.commit()
         conn.close()
 
-        worker_cooldowns[worker_info] = current_time # Update timer
+        st.session_state.worker_cooldowns[worker_info] = now # Timer update
 
         if v_conf > 0.75 and user_email and "@" in user_email:
             payload = {"worker": name, "worker_id": wid, "violation": clean_eq, "confidence": f"{v_conf:.2f}",
-                       "time": datetime.now().strftime("%I:%M %p"), "email": user_email, "subject": f"⚠️ SAFETY ALERT: {clean_eq}"}
+                       "time": datetime.now().strftime("%I:%M %p"), "email": user_email}
             try: requests.post(N8N_URL, json=payload, timeout=2)
             except: pass
     except: pass
@@ -139,80 +137,43 @@ st.set_page_config(page_title="Safe-Guard AI", layout="wide")
 
 with st.sidebar:
     st.title("🛡️ SAFE-GUARD AI")
-    menu = st.radio("Navigation", ["📊 Analytics", "👤 Worker Database", "🎥 Live Monitoring", "📁 Batch Processing"])
+    menu = st.radio("Navigation", ["📊 Analytics", "👤 Worker Database", "🎥 Live Monitoring"])
     target_email = st.text_input("Alert Email", placeholder="user@example.com").strip()
 
 if menu == "📊 Analytics":
-    st.header("📊 Real-Time Safety Dashboard")
+    st.header("📊 Dashboard")
     conn = sqlite3.connect("safety_violations.db")
     df = pd.read_sql_query("SELECT * FROM violations", conn)
     conn.close()
-
     if not df.empty:
-        c1, c2, c3 = st.columns(3)
-        c1.metric("👥 Total Scanned", len(df)+50)
-        c2.metric("⚠️ Total Violations", len(df), delta_color="inverse")
-        c3.metric("✅ Compliance Rate", f"{((len(df)+50 - len(df)) / (len(df)+50) * 100):.1f}%")
-        
-        st.subheader("📝 Detailed Logs")
+        st.metric("⚠️ Total Violations", len(df))
         st.dataframe(df.sort_values(by="timestamp", ascending=False), use_container_width=True)
-
-        col1, col2 = st.columns(2)
-        with col1:
-            st.plotly_chart(px.pie(df, names='worker_name', hole=0.5, title="Violations by Worker", template="plotly_dark"), use_container_width=True)
-        with col2:
-            st.plotly_chart(px.bar(df['equipment'].value_counts().reset_index(), x='index', y='equipment', title="Equipment Breakdown", template="plotly_dark"), use_container_width=True)
-    else: st.info("No data recorded yet.")
+        st.plotly_chart(px.pie(df, names='worker_name', hole=0.5, template="plotly_dark"), use_container_width=True)
+    else: st.info("No logs found.")
 
 elif menu == "👤 Worker Database":
-    st.header("👤 Worker Registration & List")
-    col_reg, col_list = st.columns([1, 1])
-    
-    with col_reg:
-        st.subheader("Add New Worker")
-        name = st.text_input("Full Name")
-        wid = st.text_input("Worker ID (e.g. W101)")
-        reg_mode = st.radio("Method", ["Upload", "Camera"])
-        img_file = st.file_uploader("Select Photo", type=['jpg','png']) if reg_mode == "Upload" else st.camera_input("Take Photo")
-
-        if st.button("Register Now") and name and wid and img_file:
-            # Save format: Name_ID.jpg
-            filename = f"{name.replace(' ', '_')}_{wid}.jpg"
-            img_path = os.path.join(FACES_DB, filename)
-            Image.open(img_file).convert("RGB").save(img_path)
-            
-            # Clear cache so identification works immediately
-            pkl_path = os.path.join(FACES_DB, "representations_vgg_face.pkl")
-            if os.path.exists(pkl_path): os.remove(pkl_path)
-            st.success(f"Successfully Registered: {name}")
+    st.header("👤 Registration")
+    col1, col2 = st.columns(2)
+    with col1:
+        name = st.text_input("Name")
+        wid = st.text_input("ID")
+        img_file = st.camera_input("Capture")
+        if st.button("Register") and name and wid and img_file:
+            path = os.path.join(FACES_DB, f"{name.replace(' ', '_')}_{wid}.jpg")
+            Image.open(img_file).convert("RGB").save(path)
+            # Clear cache immediately
+            pkl = os.path.join(FACES_DB, "representations_vgg_face.pkl")
+            if os.path.exists(pkl): os.remove(pkl)
+            st.success(f"Registered {name}!")
             st.rerun()
-
-    with col_list:
-        st.subheader("Registered Workers")
+    with col2:
+        st.subheader("Registered List")
         if os.path.exists(FACES_DB):
-            files = [f for f in os.listdir(FACES_DB) if f.endswith(('.jpg', '.png'))]
-            if files:
-                for f in files:
-                    clean_name = f.split('.')[0].replace('_', ' ')
-                    st.markdown(f"✅ **{clean_name}**")
-            else: st.write("No workers registered.")
+            for f in os.listdir(FACES_DB):
+                if f.endswith(".jpg"): st.text(f"✅ {f.split('.')[0]}")
 
 elif menu == "🎥 Live Monitoring":
-    st.header("🎥 Live AI Monitoring")
-    rtc_config = {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}, {"urls": ["stun:stun1.l.google.com:19302"]}]}
-    webrtc_streamer(
-        key=f"live-stream-{target_email}", 
-        mode=WebRtcMode.SENDRECV,
-        video_processor_factory=lambda: VideoProcessor(target_email),
-        rtc_configuration=rtc_config,
-        media_stream_constraints={"video": True, "audio": False},
-        async_processing=True
-    )
-
-elif menu == "📁 Batch Processing":
-    st.header("📁 Batch Image Detection")
-    files = st.file_uploader("Upload Multiple Images", accept_multiple_files=True)
-    if files:
-        for f in files:
-            img = cv2.imdecode(np.asarray(bytearray(f.read()), dtype=np.uint8), 1)
-            st.image(cv2.cvtColor(run_detection(img, target_email), cv2.COLOR_BGR2RGB), caption=f.name)
+    st.header("🎥 Monitoring")
+    webrtc_streamer(key="live", mode=WebRtcMode.SENDRECV, 
+                    video_processor_factory=lambda: VideoProcessor(target_email),
+                    async_processing=True)
