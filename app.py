@@ -151,10 +151,12 @@ def run_detection(frame, user_email):
 class VideoProcessor(VideoProcessorBase):
     def __init__(self, user_email):
         self.user_email = user_email
+
     def recv(self, frame):
         img = frame.to_ndarray(format="bgr24")
-        return av.VideoFrame.from_ndarray(run_detection(img, self.user_email), format="bgr24")
-
+        # Yahan hum check kar rahe hain ke run_detection ko wo email mil raha hai jo user ne dala
+        processed_img = run_detection(img, self.user_email) 
+        return av.VideoFrame.from_ndarray(processed_img, format="bgr24")
 # --- UI SETUP ---
 st.set_page_config(page_title="Safe-Guard AI", layout="wide")
 
