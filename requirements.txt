@@ -10,4 +10,5 @@ deepface
 tf-keras
 matplotlib
 plotly
-
+opencv-python-headless
+streamlit
