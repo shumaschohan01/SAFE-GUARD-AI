@@ -95,17 +95,18 @@ def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
         
         # 2. Email Alert Logic
         # Sirf tab email bhejein jab confidence high ho aur email address provide kiya gaya ho
-        if v_conf > 0.75 and user_email and "@" in user_email:
-            # Payload jo Pipedream ko jayega
-            payload = {
-                "worker": name,
-                "worker_id": wid,
-                "violation": clean_eq,
-                "confidence": f"{v_conf:.2f}",
-                "time": datetime.now().strftime("%I:%M %p"),
-                "email": user_email,
-                "subject": f"⚠️ SAFETY ALERT: {clean_eq} Violation detected!"
-            }
+       # --- CHANGE 1: Dynamic Payload ---
+    if v_conf > 0.75 and user_email and "@" in user_email:
+        payload = {
+            "worker": name,
+            "worker_id": wid,
+            "violation": clean_eq,
+            "confidence": f"{v_conf:.2f}",
+            "time": datetime.now().strftime("%I:%M %p"),
+            "email": user_email, # <--- Yeh line lazmi check karein, yahi receiver decide karti hai
+            "subject": f"⚠️ SAFETY ALERT: {clean_eq} Violation detected!"
+        }
+        requests.post(N8N_URL, json=payload, timeout=5)
             
             # Email bhejne ki request
             # Note: Isay 'background' mein hona chahiye taaki app hang na ho
@@ -160,10 +161,12 @@ class VideoProcessor(VideoProcessorBase):
 # --- UI SETUP ---
 st.set_page_config(page_title="Safe-Guard AI", layout="wide")
 
+# --- CHANGE 2: Input Cleaning ---
 with st.sidebar:
     st.title("🛡️ SAFE-GUARD AI")
     menu = st.radio("Navigation", ["📊 Analytics", "👤 Worker Database", "🎥 Live Monitoring", "📁 Batch Processing"])
-    target_email = st.text_input("Alert Email", placeholder="user@example.com")
+    # .strip() add karein taaki extra spaces khatam ho jayein
+    target_email = st.text_input("Alert Email", placeholder="user@example.com").strip()
 
 # --- PAGES ---
 if menu == "📊 Analytics":
@@ -313,7 +316,7 @@ elif menu == "🎥 Live Monitoring":
     
     # 2. Phir streamer mein use karein
     webrtc_streamer(
-        key="cam", 
+        key=f"cam-feed-{target_email}" 
         mode=WebRtcMode.SENDRECV,
         video_processor_factory=lambda: VideoProcessor(target_email),
         rtc_configuration=rtc_config, # Yahan wahi naam use karein jo upar rakha hai
