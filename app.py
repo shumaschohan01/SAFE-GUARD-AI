@@ -20,11 +20,9 @@ FACES_DB = "worker_faces"
 # 🔴 CHANGED: safe folder handling
 if os.path.exists(FACES_DB):
     if not os.path.isdir(FACES_DB):
-        # Agar is naam ki koi file hai toh use delete karke folder banayein
-        os.remove(FACES_DB)
-        os.makedirs(FACES_DB)
+        os.remove(FACES_DB) # Agar file hai toh delete karein
+        os.makedirs(FACES_DB) # Phir folder banayein
 else:
-    # Agar exist hi nahi karta toh naya folder banayein
     os.makedirs(FACES_DB)
 
 # --- DATABASE ---
@@ -229,21 +227,21 @@ if menu == "📊 Analytics":
 
 # --- WORKER DB ---
 elif menu == "👤 Worker Database":
-    st.header("Register Worker")
+    st.header("👤 Worker Registration")
+    col1, col2 = st.columns(2)
+    with col1:
+        name = st.text_input("Name")
+        wid = st.text_input("Worker ID")
+        reg_mode = st.radio("Method", ["Upload Photo", "Live Camera"]) # Naya Option
+        
+        img_file = st.file_uploader("Choose Image", type=['jpg','png','jpeg']) if reg_mode == "Upload Photo" else st.camera_input("Capture Face")
 
-    name = st.text_input("Name")
-    wid = st.text_input("ID")
-
-    img = st.file_uploader("Upload Image")
-
-    if st.button("Register") and img and name:
-        path = os.path.join(FACES_DB, f"{name}_{wid}.jpg")
-        Image.open(img).save(path)
-        st.success("Saved")
-
-    st.subheader("Workers")
-    for f in os.listdir(FACES_DB):
-        st.write(f)
+        if st.button("Register Now") and name and wid and img_file:
+            img_path = os.path.join(FACES_DB, f"{name.replace(' ', '_')}_{wid}.jpg")
+            img = Image.open(img_file)
+            if img.mode != "RGB": img = img.convert("RGB")
+            img.save(img_path)
+            st.success(f"Registered {name}!")
 
 # --- LIVE ---
 elif menu == "🎥 Live Monitoring":
