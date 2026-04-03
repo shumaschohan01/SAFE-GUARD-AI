@@ -74,48 +74,37 @@ def identify_worker(face_img):
     return "Unknown_N/A"
 
 def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
-    if not is_unsafe:
-        return
+    if not is_unsafe: return
+
+    global worker_cooldowns
+    current_time = time.time()
+    
+    # 🔴 TIMER: Registered worker k liye 60s, Unknown k liye sirf 2s
+    cooldown_period = 60 if worker_info != "Unknown_N/A" else 2
+    
+    if worker_info in worker_cooldowns:
+        if current_time - worker_cooldowns[worker_info] < cooldown_period:
+            return 
 
     try:
         name, wid = worker_info.split("_") if "_" in worker_info else (worker_info, "N/A")
         clean_eq = v_type.lower().replace("no", "").replace("-", "").strip().capitalize()
 
         conn = sqlite3.connect("safety_violations.db")
-        conn.execute('''
-            INSERT INTO violations 
-            (timestamp, type, status, equipment, worker_name, worker_id, confidence)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            v_type,
-            "⚠️ Unsafe",
-            clean_eq,
-            name,
-            wid,
-            float(v_conf)
-        ))
+        conn.execute('''INSERT INTO violations (timestamp, type, status, equipment, worker_name, worker_id, confidence)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)''', 
+                     (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), v_type, "⚠️ Unsafe", clean_eq, name, wid, float(v_conf)))
         conn.commit()
         conn.close()
 
-        # 🔴 CHANGED: Pipedream alert improved
+        worker_cooldowns[worker_info] = current_time # Timer update
+
+        # Alerts
         if v_conf > 0.75 and user_email and "@" in user_email:
-            payload = {
-                "worker": name,
-                "worker_id": wid,
-                "violation": clean_eq,
-                "confidence": f"{v_conf:.2f}",
-                "time": datetime.now().strftime("%I:%M %p"),
-                "email": user_email,
-                "subject": f"⚠️ SAFETY ALERT: {clean_eq}"
-            }
-
-            try:
-                res = requests.post(N8N_URL, json=payload, timeout=3)
-                print("Alert sent:", res.status_code)
-            except Exception as e:
-                print("Email Error:", e)
-
+            payload = {"worker": name, "worker_id": wid, "violation": clean_eq, "confidence": f"{v_conf:.2f}",
+                       "time": datetime.now().strftime("%I:%M %p"), "email": user_email, "subject": f"⚠️ SAFETY ALERT: {clean_eq}"}
+            try: requests.post(N8N_URL, json=payload, timeout=2)
+            except: pass
     except Exception as e:
         print("DB Error:", e)
 
