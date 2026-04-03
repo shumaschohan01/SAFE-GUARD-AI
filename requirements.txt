@@ -6,3 +6,5 @@ pandas
 requests
 pillow
 matplotlib
+numpy
+av
