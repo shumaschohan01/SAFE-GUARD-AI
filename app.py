@@ -40,8 +40,8 @@ init_db()
 # --- HELPER FUNCTIONS ---
 def identify_worker(face_img):
   try:
-     from deepface import DeepFace
-        if not os.path.exists(FACES_DB) or not os.listdir(FACES_DB): return "Unknown_N/A"
+    from deepface import DeepFace
+    if not os.path.exists(FACES_DB) or not os.listdir(FACES_DB): return "Unknown_N/A"
         temp_path = "temp_face.jpg"
         cv2.imwrite(temp_path, face_img)
         results = DeepFace.find(img_path=temp_path, db_path=FACES_DB, enforce_detection=False, silent=True)
