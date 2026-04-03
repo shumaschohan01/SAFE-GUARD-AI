@@ -41,18 +41,12 @@ init_db()
 def identify_worker(face_img):
     try:
         from deepface import DeepFace
-        import os
-        import cv2
-
-        # 1. Check karein ke database empty toh nahi
-        if not os.path.exists(FACES_DB) or not os.listdir(FACES_DB):
+        if not os.path.exists(FACES_DB) or not os.listdir(FACES_DB): 
             return "Unknown_N/A"
 
-        # 2. Temporary file save karein
         temp_path = "temp_face.jpg"
         cv2.imwrite(temp_path, face_img)
 
-        # 3. DeepFace find function call karein
         results = DeepFace.find(
             img_path=temp_path, 
             db_path=FACES_DB, 
@@ -60,35 +54,28 @@ def identify_worker(face_img):
             silent=True
         )
 
-        # 4. Result check aur cleanup
         if len(results) > 0 and not results[0].empty:
             full_path = results[0].iloc[0]['identity']
-            # Temp file delete karein kaam khatam hone par
             if os.path.exists(temp_path):
                 os.remove(temp_path)
             return os.path.basename(full_path).split('.')[0]
 
-        # Agar koi match na mile toh temp file delete karein
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
     except Exception as e:
         print(f"Error in identification: {e}")
-        pass
-
+    
     return "Unknown_N/A"
-
 
 def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
     if not is_unsafe: 
         return
-    
     try:
-        # Worker info splitting
         name, wid = worker_info.split("_") if "_" in worker_info else (worker_info, "N/A")
         clean_eq = v_type.lower().replace("no", "").replace("-", "").strip().capitalize()
         
-        # 1. Database mein save karein
+        # 1. Database Mein Save Karein
         conn = sqlite3.connect("safety_violations.db")
         conn.execute('''INSERT INTO violations (timestamp, type, status, equipment, worker_name, worker_id, confidence) 
                         VALUES (?, ?, ?, ?, ?, ?, ?)''',
@@ -96,7 +83,8 @@ def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
         conn.commit()
         conn.close()
         
-        # 2. Email Alert Logic (Ab alignment bilkul sahi hai)
+        # 2. Email Alert Logic (Pipedream)
+        # --- HIGHLIGHTED: Fixed Indentation & Logic ---
         if v_conf > 0.75 and user_email and "@" in user_email:
             payload = {
                 "worker": name,
@@ -108,16 +96,15 @@ def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
                 "subject": f"⚠️ SAFETY ALERT: {clean_eq} Violation detected!"
             }
             
-            # Email bhejne ki request
             try:
                 requests.post(N8N_URL, json=payload, timeout=5)
                 print(f"Alert sent for {name} to {user_email}")
-            except Exception as email_err:
-                print(f"Email service unreachable: {email_err}")
+            except Exception as e:
+                print(f"Email service unreachable: {e}")
                 
     except Exception as e:
-        # Yeh except main function ki safety ke liye hai
         print(f"Reporting Error: {e}")
+
 def run_detection(frame, user_email):
     try:
         _, img_encoded = cv2.imencode('.jpg', frame)
@@ -136,7 +123,8 @@ def run_detection(frame, user_email):
                 worker_info = "Unknown_N/A"
                 if is_unsafe:
                     face_crop = frame[max(0, y1):y2, max(0, x1):x2]
-                    if face_crop.size > 0: worker_info = identify_worker(face_crop)
+                    if face_crop.size > 0: 
+                        worker_info = identify_worker(face_crop)
                     save_to_report(label, conf, True, worker_info, user_email)
                     color = (0, 0, 255)
                 else:
@@ -144,7 +132,8 @@ def run_detection(frame, user_email):
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
                 label_text = f"ALERT: {label}" if is_unsafe else label
                 cv2.putText(frame, f"{label_text} ({conf:.2f})", (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-    except: pass
+    except: 
+        pass
     return frame
 
 class VideoProcessor(VideoProcessorBase):
@@ -153,124 +142,57 @@ class VideoProcessor(VideoProcessorBase):
 
     def recv(self, frame):
         img = frame.to_ndarray(format="bgr24")
-        # Yahan hum check kar rahe hain ke run_detection ko wo email mil raha hai jo user ne dala
         processed_img = run_detection(img, self.user_email) 
         return av.VideoFrame.from_ndarray(processed_img, format="bgr24")
+
 # --- UI SETUP ---
 st.set_page_config(page_title="Safe-Guard AI", layout="wide")
 
-# --- CHANGE 2: Input Cleaning ---
 with st.sidebar:
     st.title("🛡️ SAFE-GUARD AI")
     menu = st.radio("Navigation", ["📊 Analytics", "👤 Worker Database", "🎥 Live Monitoring", "📁 Batch Processing"])
-    # .strip() add karein taaki extra spaces khatam ho jayein
+    # --- HIGHLIGHTED: Added .strip() ---
     target_email = st.text_input("Alert Email", placeholder="user@example.com").strip()
 
 # --- PAGES ---
 if menu == "📊 Analytics":
     st.header("📊 Real-Time Safety Dashboard")
     
-    # Database se data uthana
     conn = sqlite3.connect("safety_violations.db")
     df = pd.read_sql_query("SELECT * FROM violations", conn)
     conn.close()
 
-    # --- CALCULATIONS FOR TILES ---
-    # Note: 'Total Scanned' ko accurately track karne ke liye hum total detections ya logs use karte hain
     total_violations = len(df)
-    
-    # Dummy logic for 'Total Scanned' (agar aapne scan logs alag nahi banaye toh hum assume karte hain)
-    # Behtar FYP ke liye hum isay total frames ya registered workers se relate kar sakte hain
-    total_scanned = total_violations + 50  # Sirf example ke liye, aap isay frame count se link kar sakte hain
-    
-    if total_scanned > 0:
-        compliance_rate = ((total_scanned - total_violations) / total_scanned) * 100
-    else:
-        compliance_rate = 100
+    total_scanned = total_violations + 50 
+    compliance_rate = ((total_scanned - total_violations) / total_scanned) * 100 if total_scanned > 0 else 100
 
-    # --- LIVE COUNTER TILES (Top Row) ---
     col1, col2, col3 = st.columns(3)
-    
     with col1:
-        st.metric(label="👥 Total Scanned", value=total_scanned, delta="Overall Activity")
-    
+        st.metric(label="👥 Total Scanned", value=total_scanned)
     with col2:
-        # Delta mein hum dikhate hain ke violations barh rahi hain ya kam (Red color for increase)
-        st.metric(label="⚠️ Total Violations", value=total_violations, delta=f"{total_violations} Detected", delta_color="inverse")
-    
+        st.metric(label="⚠️ Total Violations", value=total_violations, delta_color="inverse")
     with col3:
-        st.metric(label="✅ Safety Compliance", value=f"{compliance_rate:.1f}%", delta="Target: 95%+")
+        st.metric(label="✅ Safety Compliance", value=f"{compliance_rate:.1f}%")
 
-    st.markdown("---") # Divider line
-
-    # --- GRAPHS SECTION ---
     if not df.empty:
         df['timestamp'] = pd.to_datetime(df['timestamp'])
-        c1, c2 = st.columns(2)
+        st.subheader("📈 Violation Trend")
+        trend_df = df.resample('H', on='timestamp').count()['id']
+        st.line_chart(trend_df)
         
-        with c1:
-            st.subheader("📈 Violation Trend")
-            # Hourly trend line graph
-            trend_df = df.resample('H', on='timestamp').count()['id']
-            st.line_chart(trend_df)
-            
-        with c2:
-            st.subheader("🍕 Violation Distribution")
-            fig, ax = plt.subplots(figsize=(5, 5))
-            df['worker_name'].value_counts().plot.pie(autopct='%1.1f%%', ax=ax, colors=['#ff9999','#66b3ff','#99ff99'])
-            st.pyplot(fig)
-
         st.subheader("📝 Recent Violation Logs")
         st.dataframe(df.sort_values(by="timestamp", ascending=False), use_container_width=True)
-    else:
-        st.info("Abhi tak koi violation data record nahi hua. Live Monitoring start karein!")
 
-
-    st.header("📊 Real-Time Safety Dashboard")
-    
-    # Database se data load karein
-    conn = sqlite3.connect("safety_violations.db")
-    df = pd.read_sql_query("SELECT * FROM violations", conn)
-    conn.close()
-
-    if not df.empty:
-        # Date conversion aur preprocessing
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
-        df['date'] = df['timestamp'].dt.date
-        
-        # --- 📅 AI SAFETY CALENDAR LOGIC ---
-        st.subheader("📅 Monthly Safety Compliance Calendar")
-        
-        # Har din ki total violations count karein
-        daily_counts = df.groupby('date').size().reset_index(name='Violations')
-        
-        # Calendar Heatmap Chart
-        # Hum 'Violations' ke mutabiq color set karenge (Kam = Green, Zyada = Red)
-        fig_cal = px.density_heatmap(
-            daily_counts, 
-            x="date", 
-            y=[1]*len(daily_counts), # Dummy Y-axis for horizontal look
-            z="Violations",
-            color_continuous_scale=["#00ff00", "#ffff00", "#ff0000"], # Green -> Yellow -> Red
-            labels={'z': 'Violations Count', 'date': 'Date'},
-            height=200
-        )
-        
-        # UI ko saaf dikhane ke liye axis hide karein
-        fig_cal.update_yaxes(showticklabels=False, title="")
-        fig_cal.update_layout(margin=dict(l=20, r=20, t=20, b=20))
-        
-        st.plotly_chart(fig_cal, use_container_width=True)
-        
-        st.info("💡 **Tip:** Green box matlab 'Safe Day', Red box matlab 'High Violations Day'.")
-        
-        # --- PURANE METRICS AUR GRAPHS ---
         st.markdown("---")
-        col1, col2, col3 = st.columns(3)
-        # ... (Aapka purana metrics code yahan aayega) ...
-
-    else:
-        st.info("Calendar display karne ke liye abhi data mojud nahi hai.")
+        st.subheader("📅 Monthly Safety Compliance Calendar")
+        df['date'] = df['timestamp'].dt.date
+        daily_counts = df.groupby('date').size().reset_index(name='Violations')
+        fig_cal = px.density_heatmap(
+            daily_counts, x="date", y=[1]*len(daily_counts), z="Violations",
+            color_continuous_scale=["#00ff00", "#ffff00", "#ff0000"], height=200
+        )
+        fig_cal.update_yaxes(showticklabels=False, title="")
+        st.plotly_chart(fig_cal, use_container_width=True)
 
 elif menu == "👤 Worker Database":
     st.header("👤 Register New Worker")
@@ -278,64 +200,45 @@ elif menu == "👤 Worker Database":
     with col1:
         name = st.text_input("Worker Name")
         wid = st.text_input("Worker ID")
-        
-        reg_mode = st.radio("Registration Mode", ["Upload Photo", "Take Photo"])
-        img_file = None
-        if reg_mode == "Upload Photo":
-            img_file = st.file_uploader("Upload Worker Image", type=['jpg', 'png', 'jpeg'])
-        else:
-            img_file = st.camera_input("Take Photo")
+        reg_mode = st.radio("Mode", ["Upload Photo", "Take Photo"])
+        img_file = st.file_uploader("Upload", type=['jpg','png','jpeg']) if reg_mode=="Upload Photo" else st.camera_input("Take Photo")
 
         if st.button("Register Worker") and img_file and name:
-            safe_name = name.replace(" ", "_")
-            img_path = os.path.join(FACES_DB, f"{safe_name}_{wid}.jpg")
+            img_path = os.path.join(FACES_DB, f"{name.replace(' ', '_')}_{wid}.jpg")
             Image.open(img_file).save(img_path)
-            st.success(f"Worker {name} Registered Successfully!")
+            st.success(f"Worker {name} Registered!")
     with col2:
-        st.subheader("Registered Workers List")
+        st.subheader("Registered Workers")
         if os.path.exists(FACES_DB):
             for f in os.listdir(FACES_DB):
-                if f.endswith(('.jpg', '.png', '.jpeg')):
-                    st.write(f"✅ {f.split('.')[0]}")
-
-
+                st.write(f"✅ {f.split('.')[0]}")
 
 elif menu == "🎥 Live Monitoring":
     st.header("🎥 Live AI Safety Feed")
     
-    # 1. Pehle variable define karein (Yeh line miss ho rahi thi)
-    rtc_config = {
-        "iceServers": [
-            {"urls": ["stun:stun.l.google.com:19302"]},
-            {"urls": ["stun:stun1.l.google.com:19302"]},
-            {"urls": ["stun:stun2.l.google.com:19302"]}
-        ]
-    }
+    if not target_email:
+        st.warning("⚠️ Pehle Sidebar mein email darj karein.")
+    else:
+        st.success(f"📧 Alerts will be sent to: **{target_email}**")
+
+    rtc_config = {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
     
-    # 2. Phir streamer mein use karein
+    # --- HIGHLIGHTED: Added Comma & Dynamic Key ---
     webrtc_streamer(
-        key=f"cam-feed-{target_email}",
+        key=f"cam-feed-{target_email}", 
         mode=WebRtcMode.SENDRECV,
         video_processor_factory=lambda: VideoProcessor(target_email),
-        rtc_configuration=rtc_config, # Yahan wahi naam use karein jo upar rakha hai
-        media_stream_constraints={
-            "video": {
-                "width": {"ideal": 640},
-                "height": {"ideal": 480},
-                "frameRate": {"ideal": 15}
-            },
-            "audio": False
-        },
+        rtc_configuration=rtc_config,
+        media_stream_constraints={"video": True, "audio": False},
         async_processing=True
     )
 
 elif menu == "📁 Batch Processing":
     st.header("📁 Image Batch Analysis")
-    uploaded_files = st.file_uploader("Upload Images for Detection", type=['jpg', 'png', 'jpeg'], accept_multiple_files=True)
+    uploaded_files = st.file_uploader("Upload Images", type=['jpg', 'png', 'jpeg'], accept_multiple_files=True)
     if uploaded_files:
         for uploaded_file in uploaded_files:
             file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
             frame = cv2.imdecode(file_bytes, 1)
-            with st.spinner(f"Analyzing {uploaded_file.name}..."):
-                processed_frame = run_detection(frame, target_email)
-                st.image(cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB), caption=f"Result: {uploaded_file.name}", use_container_width=True)
+            processed_frame = run_detection(frame, target_email)
+            st.image(cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB), use_container_width=True)
