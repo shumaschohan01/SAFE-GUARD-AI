@@ -80,8 +80,11 @@ def identify_worker(face_img):
 
 
 def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
-    if not is_unsafe: return
+    if not is_unsafe: 
+        return
+    
     try:
+        # Worker info splitting
         name, wid = worker_info.split("_") if "_" in worker_info else (worker_info, "N/A")
         clean_eq = v_type.lower().replace("no", "").replace("-", "").strip().capitalize()
         
@@ -93,33 +96,28 @@ def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
         conn.commit()
         conn.close()
         
-        # 2. Email Alert Logic
-        # Sirf tab email bhejein jab confidence high ho aur email address provide kiya gaya ho
-       # --- CHANGE 1: Dynamic Payload ---
-    if v_conf > 0.75 and user_email and "@" in user_email:
-          payload = {
-            "worker": name,
-            "worker_id": wid,
-            "violation": clean_eq,
-            "confidence": f"{v_conf:.2f}",
-            "time": datetime.now().strftime("%I:%M %p"),
-            "email": user_email, # <--- Yeh line lazmi check karein, yahi receiver decide karti hai
-            "subject": f"⚠️ SAFETY ALERT: {clean_eq} Violation detected!"
-        }
-        requests.post(N8N_URL, json=payload, timeout=5)
+        # 2. Email Alert Logic (Ab alignment bilkul sahi hai)
+        if v_conf > 0.75 and user_email and "@" in user_email:
+            payload = {
+                "worker": name,
+                "worker_id": wid,
+                "violation": clean_eq,
+                "confidence": f"{v_conf:.2f}",
+                "time": datetime.now().strftime("%I:%M %p"),
+                "email": user_email, 
+                "subject": f"⚠️ SAFETY ALERT: {clean_eq} Violation detected!"
+            }
             
             # Email bhejne ki request
-            # Note: Isay 'background' mein hona chahiye taaki app hang na ho
             try:
-                requests.post(N8N_URL, json=payload, timeout=2)
-                # Success message sirf console/sidebar mein dikhane ke liye
-                print(f"Alert sent for {name}")
-            except:
-                print("Email service unreachable")
+                requests.post(N8N_URL, json=payload, timeout=5)
+                print(f"Alert sent for {name} to {user_email}")
+            except Exception as email_err:
+                print(f"Email service unreachable: {email_err}")
                 
     except Exception as e:
+        # Yeh except main function ki safety ke liye hai
         print(f"Reporting Error: {e}")
-
 def run_detection(frame, user_email):
     try:
         _, img_encoded = cv2.imencode('.jpg', frame)
