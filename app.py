@@ -314,7 +314,7 @@ elif menu == "🎥 Live Monitoring":
     
     # 2. Phir streamer mein use karein
     webrtc_streamer(
-        key=f"cam-feed-{target_email}" 
+        key=f"cam-feed-{target_email}",
         mode=WebRtcMode.SENDRECV,
         video_processor_factory=lambda: VideoProcessor(target_email),
         rtc_configuration=rtc_config, # Yahan wahi naam use karein jo upar rakha hai
