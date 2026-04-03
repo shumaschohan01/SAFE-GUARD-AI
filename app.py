@@ -120,15 +120,31 @@ with st.sidebar:
 
 if menu == "📊 Analytics":
     st.header("📊 Dashboard")
+
     conn = sqlite3.connect("safety_violations.db")
     df = pd.read_sql_query("SELECT * FROM violations", conn)
     conn.close()
+
+    total_violations = len(df)
+    total_scanned = total_violations + 50  # 🔴 CHANGED dummy logic
+
+    compliance = ((total_scanned - total_violations) / total_scanned * 100) if total_scanned else 100
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("👥 Scanned", total_scanned)
+    c2.metric("⚠️ Violations", total_violations)
+    c3.metric("✅ Compliance", f"{compliance:.1f}%")
+
     if not df.empty:
-        c1, c2, c3 = st.columns(3)
-        c1.metric("⚠️ Violations", len(df))
-        c2.metric("✅ System", "Online")
-        st.dataframe(df, use_container_width=True)
-    else: st.info("No data yet.")
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+        st.line_chart(df.resample('H', on='timestamp').count()['id'])
+
+        fig, ax = plt.subplots()
+        df['worker_name'].value_counts().plot.pie(autopct='%1.1f%%', ax=ax)
+        st.pyplot(fig)
+
+        st.dataframe(df)
 
 elif menu == "👤 Worker Database":
     st.header("👤 Worker Registration")
