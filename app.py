@@ -38,18 +38,22 @@ def init_db():
 init_db()
 
 # --- HELPER FUNCTIONS ---
+#def identify_worker(face_img):
+ #   try:
+ #       from deepface import DeepFace
+#        if not os.path.exists(FACES_DB) or not os.listdir(FACES_DB): return "Unknown_N/A"
+#        temp_path = "temp_face.jpg"
+#        cv2.imwrite(temp_path, face_img)
+#        results = DeepFace.find(img_path=temp_path, db_path=FACES_DB, enforce_detection=False, silent=True)
+#        if len(results) > 0 and not results[0].empty:
+#           full_path = results[0].iloc[0]['identity']
+#            return os.path.basename(full_path).split('.')[0]
+#  except: pass
+ #   return "Unknown_N/A"
+#
 def identify_worker(face_img):
-    try:
-        from deepface import DeepFace
-        if not os.path.exists(FACES_DB) or not os.listdir(FACES_DB): return "Unknown_N/A"
-        temp_path = "temp_face.jpg"
-        cv2.imwrite(temp_path, face_img)
-        results = DeepFace.find(img_path=temp_path, db_path=FACES_DB, enforce_detection=False, silent=True)
-        if len(results) > 0 and not results[0].empty:
-            full_path = results[0].iloc[0]['identity']
-            return os.path.basename(full_path).split('.')[0]
-    except: pass
-    return "Unknown_N/A"
+    # Filhal deepface ko disable kar rahe hain taaki deployment success ho
+    return "Worker_Detected"
 
 def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
     if not is_unsafe: return
