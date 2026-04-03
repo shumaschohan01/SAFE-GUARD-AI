@@ -59,56 +59,34 @@ def identify_worker(face_img):
     return "Unknown_N/A"
 
 def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
-    if not is_unsafe: 
-        return
-
-    # --- NEW: COOLDOWN LOGIC (1 Minute Timer) ---
-    if 'violation_cooldowns' not in st.session_state:
-        st.session_state.violation_cooldowns = {}
-
+    if not is_unsafe: return
+    
+    global worker_cooldowns
     current_time = time.time()
     
-    # Agar ye worker pehle detect ho chuka hai, toh check karein kitna time guzra
-    if worker_info in st.session_state.violation_cooldowns:
-        last_recorded_time = st.session_state.violation_cooldowns[worker_info]
-        # Agar 60 seconds se kam time hua hai, toh function se bahar nikal jayein (don't save/email)
-        if current_time - last_recorded_time < 60:
+    # 1 Minute Cooldown Check
+    if worker_info in worker_cooldowns:
+        if current_time - worker_cooldowns[worker_info] < 60:
             return 
 
     try:
         name, wid = worker_info.split("_") if "_" in worker_info else (worker_info, "N/A")
         clean_eq = v_type.lower().replace("no", "").replace("-", "").strip().capitalize()
         
-        # Database Save
         conn = sqlite3.connect("safety_violations.db")
-        conn.execute('''INSERT INTO violations (timestamp, type, status, equipment, worker_name, worker_id, confidence) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?)''',
+        conn.execute('INSERT INTO violations (timestamp, type, status, equipment, worker_name, worker_id, confidence) VALUES (?, ?, ?, ?, ?, ?, ?)',
                      (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), v_type, "⚠️ Unsafe", clean_eq, name, wid, float(v_conf)))
         conn.commit()
         conn.close()
         
-        # --- Update Cooldown Timer ---
-        # Sirf tab update karein jab data save ho jaye
-        st.session_state.violation_cooldowns[worker_info] = current_time
+        worker_cooldowns[worker_info] = current_time # Update Timer
 
-        # Pipedream Email Alert
         if v_conf > 0.75 and user_email and "@" in user_email:
-            payload = {
-                "worker": name,
-                "worker_id": wid,
-                "violation": clean_eq,
-                "confidence": f"{v_conf:.2f}",
-                "time": datetime.now().strftime("%I:%M %p"),
-                "email": user_email, 
-                "subject": f"⚠️ SAFETY ALERT: {clean_eq} Violation!"
-            }
-            try:
-                requests.post(N8N_URL, json=payload, timeout=5)
-            except:
-                pass
-                
-    except Exception as e:
-        print(f"Reporting Error: {e}")
+            payload = {"worker": name, "worker_id": wid, "violation": clean_eq, "confidence": f"{v_conf:.2f}",
+                       "time": datetime.now().strftime("%I:%M %p"), "email": user_email, "subject": f"⚠️ SAFETY ALERT: {clean_eq}"}
+            try: requests.post(N8N_URL, json=payload, timeout=2)
+            except: pass
+    except: pass
 
 def run_detection(frame, user_email):
     try:
