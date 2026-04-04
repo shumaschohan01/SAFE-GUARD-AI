@@ -16,10 +16,16 @@ from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
 # --- CONFIGURATION ---
 API_URL = "https://shumaschohan-safeguard-ai.hf.space/predict/"
 N8N_URL = "https://eom4pk834n2y9tj.m.pipedream.net"
-# Safe folder handling
-FACES_DB = "worker_faces"
 
-if not os.path.exists(FACES_DB): os.makedirs(FACES_DB)
+FACES_DB = os.path.join(BASE_DIR, "worker_faces")
+
+# Ye ensure karega ke folder maujood hai (corrupted files ko delete karke)
+if os.path.exists(FACES_DB):
+    if not os.path.isdir(FACES_DB):
+        os.remove(FACES_DB)
+        os.makedirs(FACES_DB, exist_ok=True)
+else:
+    os.makedirs(FACES_DB, exist_ok=True)
 
 # --- DATABASE SETUP ---
 def init_db():
@@ -32,6 +38,17 @@ def init_db():
     conn.commit(); conn.close()
 
 init_db()
+
+
+def get_registered_workers():
+    try:
+        if not os.path.exists(FACES_DB):
+            return []
+        # Sirf images ko list karein, .gitkeep ya .pkl ko nahi
+        files = [f for f in os.listdir(FACES_DB) if f.lower().endswith(('.jpg', '.png', '.jpeg'))]
+        return sorted(list(set([f.split('_')[0] for f in files])))
+    except Exception:
+        return []
 
 # --- HELPER FUNCTIONS ---
 def identify_worker(face_img):
@@ -217,19 +234,28 @@ elif menu == "👤 Worker Database":
         name = st.text_input("Name")
         emp_id = st.text_input("ID")
         img_file = st.camera_input("Photo") if method == "Camera" else st.file_uploader("Photo", type=['jpg', 'png'])
-        if st.button("Register") and img_file and name and emp_id:
-            Image.open(img_file).convert('RGB').save(os.path.join(FACES_DB, f"{name}_{emp_id}.jpg"))
-            st.success("Registered!")
-            st.rerun()
-    with col2:
-        st.subheader("Personnel List")
-        for f in os.listdir(FACES_DB):
-            if "_" in f:
-                c1, c2 = st.columns([4, 1])
-                c1.write(f"✅ {f.split('.')[0]}")
-                if c2.button("🗑️", key=f):
+        if st.button("Register Now"):
+    if new_name and new_id and img_input:
+        # Folder ko dobara check karein (Safety first!)
+        os.makedirs(FACES_DB, exist_ok=True)
+        
+        clean_name = new_name.strip().replace(" ", "_")
+        filename = f"{clean_name}_{new_id.strip()}.jpg"
+        save_path = os.path.join(FACES_DB, filename)
+
+        try:
+            img = Image.open(img_input).convert("RGB")
+            img.save(save_path)
+            
+            # DeepFace ki purani cache (.pkl files) delete karein taaki naya banda pehchana jaye
+            for f in os.listdir(FACES_DB):
+                if f.endswith(".pkl"):
                     os.remove(os.path.join(FACES_DB, f))
-                    st.rerun()
+            
+            st.success(f"✅ {new_name} registered!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error saving image: {e}")
 
 elif menu == "🎥 Live Monitoring":
     st.header("🎥 Live Feed")
