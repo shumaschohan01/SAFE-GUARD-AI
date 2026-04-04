@@ -19,7 +19,12 @@ API_URL = "https://shumaschohan-safeguard-ai.hf.space/predict/"
 N8N_URL = "https://eom4pk834n2y9tj.m.pipedream.net"
 FACES_DB = "worker_faces"
 
-if not os.path.exists(FACES_DB): os.makedirs(FACES_DB)
+if os.path.exists(FACES_DB):
+    if not os.path.isdir(FACES_DB):
+        os.remove(FACES_DB) # Purani corrupted file khatam
+        os.makedirs(FACES_DB, exist_ok=True)
+else:
+    os.makedirs(FACES_DB, exist_ok=True)
 
 # --- DATABASE SETUP ---
 def init_db():
@@ -137,10 +142,38 @@ elif menu == "👤 Worker Database":
         name = st.text_input("Name")
         emp_id = st.text_input("ID")
         img_file = st.camera_input("Photo") if method == "Camera" else st.file_uploader("Photo", type=['jpg', 'png'])
-        if st.button("Register") and img_file and name and emp_id:
-            Image.open(img_file).convert('RGB').save(os.path.join(FACES_DB, f"{name}_{emp_id}.jpg"))
-            st.success("Registered!")
+       if st.button("Register Worker"):
+    if new_name and new_id and img_input:
+        # Step 1: Clean inputs
+        clean_name = new_name.strip().replace(" ", "_")
+        clean_id = new_id.strip()
+        filename = f"{clean_name}_{clean_id}.jpg"
+        
+        # Step 2: Final path create karein
+        save_path = os.path.join(FACES_DB, filename)
+
+        # Step 3: Check karein ke FACES_DB waqayi folder hai
+        if os.path.exists(FACES_DB) and not os.path.isdir(FACES_DB):
+            os.remove(FACES_DB) # Agar file hai toh uda do
+            
+        os.makedirs(FACES_DB, exist_ok=True) # Folder ensure karein
+
+        try:
+            # Step 4: Save image
+            img = Image.open(img_input).convert("RGB")
+            img.save(save_path)
+            
+            # Step 5: DeepFace cache clear karein
+            for f in os.listdir(FACES_DB):
+                if f.endswith(".pkl"):
+                    os.remove(os.path.join(FACES_DB, f))
+            
+            st.success(f"✅ {new_name} registered successfully!")
             st.rerun()
+        except Exception as e:
+            st.error(f"Save karne mein masla: {e}")
+    else:
+        st.error("Naam, ID aur Photo lazmi hain.")
     with col2:
         st.subheader("Personnel List")
         for f in os.listdir(FACES_DB):
