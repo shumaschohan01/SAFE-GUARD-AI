@@ -239,19 +239,19 @@ elif menu == "👤 Worker Database":
             new_name = st.text_input("Full Name", placeholder="e.g. Ahmad Ali")
             new_id = st.text_input("Worker ID", placeholder="e.g. W-405")
             
-            # Professional Tabs: Inka faida ye hai ke camera tabhi load hoga jab select hoga
+            # Professional Tabs: Upload vs Camera
             tab_upload, tab_camera = st.tabs(["📁 Upload Photo", "📸 Use Camera"])
             
             img_input = None
             
             with tab_upload:
-                st.info("Desktop se image select karein.")
+                st.info("System se file select karein. (Is waqt camera band rahega)")
                 img_file = st.file_uploader("Select worker image", type=['jpg', 'jpeg', 'png'], key="file_reg")
                 if img_file: 
                     img_input = img_file
                 
             with tab_camera:
-                # Camera tab select hone par hi initialize hoga
+                # Camera sirf is tab par click karne se hi active hoga
                 st.warning("Face ko frame ke beech mein rakhein.")
                 cam_file = st.camera_input("Capture worker face", key="worker_cam")
                 if cam_file: 
@@ -266,16 +266,17 @@ elif menu == "👤 Worker Database":
                     save_path = os.path.join(FACES_DB, filename)
 
                     try:
-                        with st.spinner("Processing facial data..."):
+                        with st.spinner("Saving worker details..."):
                             img = Image.open(img_input).convert("RGB")
                             img.save(save_path)
                             
-                            # Cache clear for DeepFace accuracy
-                            for f in os.listdir(FACES_DB):
-                                if f.endswith(".pkl"):
-                                    os.remove(os.path.join(FACES_DB, f))
+                            # Cache clear for DeepFace
+                            if os.path.exists(FACES_DB):
+                                for f in os.listdir(FACES_DB):
+                                    if f.endswith(".pkl"):
+                                        os.remove(os.path.join(FACES_DB, f))
                             
-                            st.toast(f"Success! {new_name} added.", icon="✅")
+                            st.toast(f"Success! {new_name} registered.", icon="✅")
                             time.sleep(1)
                             st.rerun()
                     except Exception as e:
@@ -283,33 +284,41 @@ elif menu == "👤 Worker Database":
                 else:
                     st.warning("⚠️ Please provide Name, ID, and a Photo.")
 
-    # --- SIDE LIST: Registered Workers (Clean Look) ---
+    # --- SIDE LIST: Registered Workers (No Images) ---
     with col2:
         st.subheader("📋 Registered Personnel")
         
         # Search filter
-        search_q = st.text_input("🔍 Search", placeholder="Filter by name...")
+        search_q = st.text_input("🔍 Search Worker", placeholder="Type name or ID...")
         
-        with st.container(height=500, border=True):
-            # Sirf valid images ko filter karein
-            all_files = [f for f in os.listdir(FACES_DB) if f.lower().endswith(('.jpg', '.png', '.jpeg'))]
-            
-            if not all_files:
-                st.caption("No workers found.")
+        # Main list container
+        with st.container(height=520, border=True):
+            if not os.path.exists(FACES_DB):
+                st.caption("Database folder not found.")
             else:
-                for f in all_files:
-                    # File name se name aur ID nikaalna
-                    display_name = f.split('.')[0].replace("_", " ")
-                    
-                    if search_q.lower() in display_name.lower():
-                        # UI Row for worker
-                        with st.expander(f"👤 {display_name}"):
-                            # Image default pe show nahi hogi, sirf expander kholne pe dikhegi
-                            st.image(os.path.join(FACES_DB, f), caption="Registered Face", use_container_width=True)
-                            
-                            if st.button(f"Remove {display_name}", key=f"del_{f}", type="secondary", use_container_width=True):
-                                os.remove(os.path.join(FACES_DB, f))
-                                st.rerun()
+                all_files = [f for f in os.listdir(FACES_DB) if f.lower().endswith(('.jpg', '.png', '.jpeg'))]
+                
+                if not all_files:
+                    st.info("No workers registered yet.")
+                else:
+                    for f in all_files:
+                        # File name se name aur ID nikaalna
+                        display_name = f.split('.')[0].replace("_", " ")
+                        
+                        if search_q.lower() in display_name.lower():
+                            # Ek saaf suthra row format
+                            with st.container(border=False):
+                                c_name, c_del = st.columns([4, 1])
+                                
+                                # Sirf naam aur ID show hogi
+                                c_name.markdown(f"**👤 {display_name}**")
+                                
+                                # Delete button
+                                if c_del.button("🗑️", key=f"del_{f}", help=f"Delete {display_name}"):
+                                    os.remove(os.path.join(FACES_DB, f))
+                                    st.rerun()
+                                
+                                st.divider() # Har worker ke baad line
                 
 elif menu == "🎥 Live Monitoring":
     st.header("🎥 Live Feed")
