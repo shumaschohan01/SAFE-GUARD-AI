@@ -17,6 +17,7 @@ from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
 API_URL = "https://shumaschohan-safeguard-ai.hf.space/predict/"
 N8N_URL = "https://eom4pk834n2y9tj.m.pipedream.net"
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FACES_DB = os.path.join(BASE_DIR, "worker_faces")
 
 # Ye ensure karega ke folder maujood hai (corrupted files ko delete karke)
