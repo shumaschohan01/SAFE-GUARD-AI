@@ -16,24 +16,20 @@ from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
 # --- CONFIGURATION ---
 API_URL = "https://shumaschohan-safeguard-ai.hf.space/predict/"
 N8N_URL = "https://eom4pk834n2y9tj.m.pipedream.net"
+# Safe folder handling
 FACES_DB = "worker_faces"
 
-# Safe folder handling
-if os.path.exists(FACES_DB):
-    if not os.path.isdir(FACES_DB):
-        os.remove(FACES_DB)
-        os.makedirs(FACES_DB)
-else:
-    os.makedirs(FACES_DB)
+if not os.path.exists(FACES_DB): os.makedirs(FACES_DB)
 
-# --- DATABASE ---
+# --- DATABASE SETUP ---
 def init_db():
     conn = sqlite3.connect("safety_violations.db")
     conn.execute('''CREATE TABLE IF NOT EXISTS violations 
-                    (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT, type TEXT, 
-                     status TEXT, equipment TEXT, worker_name TEXT, worker_id TEXT, confidence REAL)''')
-    conn.commit()
-    conn.close()
+                    (id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                     timestamp TEXT, type TEXT, status TEXT,
+                     equipment TEXT, worker_name TEXT,
+                     worker_id TEXT, confidence REAL)''')
+    conn.commit(); conn.close()
 
 init_db()
 
