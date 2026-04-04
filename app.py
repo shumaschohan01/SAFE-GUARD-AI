@@ -241,26 +241,28 @@ if menu == "📊 Analytics":
 
     else:
         st.info("Abhi tak koi data record nahi hua.")
+        
 elif menu == "👤 Worker Database":
     st.header("👤 Worker Registration")
     col1, col2 = st.columns(2)
     with col1:
+        method = st.radio("Method", ["Camera", "Upload"])
         name = st.text_input("Name")
-        wid = st.text_input("Worker ID")
-        reg_mode = st.radio("Method", ["Upload Photo", "Live Camera"], key="reg_mode")
-        
-        # Unique keys are CRITICAL here
-        if reg_mode == "Upload Photo":
-            img_file = st.file_uploader("Choose Image", type=['jpg','png','jpeg'], key="upload_key")
-        else:
-            img_file = st.camera_input("Capture Face", key="worker_cam_key")
-
-        if st.button("Register Now") and name and wid and img_file:
-            img_path = os.path.join(FACES_DB, f"{name.replace(' ', '_')}_{wid}.jpg")
-            img = Image.open(img_file)
-            if img.mode != "RGB": img = img.convert("RGB")
-            img.save(img_path)
-            st.success(f"Registered {name}!")
+        emp_id = st.text_input("ID")
+        img_file = st.camera_input("Photo") if method == "Camera" else st.file_uploader("Photo", type=['jpg', 'png'])
+        if st.button("Register") and img_file and name and emp_id:
+            Image.open(img_file).convert('RGB').save(os.path.join(FACES_DB, f"{name}_{emp_id}.jpg"))
+            st.success("Registered!")
+            st.rerun()
+    with col2:
+        st.subheader("Personnel List")
+        for f in os.listdir(FACES_DB):
+            if "_" in f:
+                c1, c2 = st.columns([4, 1])
+                c1.write(f"✅ {f.split('.')[0]}")
+                if c2.button("🗑️", key=f):
+                    os.remove(os.path.join(FACES_DB, f))
+                    st.rerun()
 
 elif menu == "🎥 Live Monitoring":
     st.header("🎥 Live Feed")
