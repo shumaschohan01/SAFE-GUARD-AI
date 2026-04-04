@@ -46,33 +46,43 @@ def get_registered_workers():
         return []
 
 def identify_worker(face_img):
-    """DeepFace matching logic"""
     try:
         from deepface import DeepFace
-        temp_path = "current_analysis.jpg"
+        import os
+
+        # 1. Temp image save karein high quality mein
+        temp_path = "debug_face.jpg"
         cv2.imwrite(temp_path, face_img)
         
-        # Representations refresh
+        # 2. Representations cache ko lazmi delete karein har baar
         pkl_path = os.path.join(FACES_DB, "representations_vgg_face.pkl")
-        if os.path.exists(pkl_path): os.remove(pkl_path)
+        if os.path.exists(pkl_path):
+            os.remove(pkl_path)
 
+        # 3. DeepFace Find logic
+        # Model 'Facenet' ya 'VGG-Face' dono mein se koi bhi use kar sakte hain
         results = DeepFace.find(
             img_path=temp_path, 
             db_path=FACES_DB, 
             model_name='VGG-Face', 
             distance_metric='cosine',
             enforce_detection=False, 
-            detector_backend='opencv',
+            detector_backend='opencv', # 'retinaface' slow hai magar accurate hai, 'opencv' fast hai
             silent=True
         )
 
         if len(results) > 0 and not results[0].empty:
             best_match = results[0].iloc[0]
-            if best_match['distance'] < 0.4: 
-                identity = best_match['identity']
-                return os.path.basename(identity).split('.')[0]
+            # VGG-Face ke liye cosine distance 0.40 se kam hona chahiye match ke liye
+            if best_match['distance'] < 0.40: 
+                identity_path = best_match['identity']
+                # File name se worker ka naam nikaalein (e.g., Ali_101.jpg -> Ali)
+                worker_filename = os.path.basename(identity_path).split('_')[0]
+                return worker_filename
+                
     except Exception as e:
-        print(f"Recognition Error: {e}")
+        print(f"DeepFace Match Error: {e}")
+    
     return "Unknown"
 
 def run_detection(frame, user_email, save_log=True):
@@ -95,13 +105,17 @@ def run_detection(frame, user_email, save_log=True):
                 color = (0, 255, 0) # Safe
 
                 if is_unsafe:
-                    color = (0, 0, 255) # Violation
-                    # Face crop logic
-                    head_h = int((y2 - y1) * 0.5)
-                    face_crop = frame[max(0, y1-20):y1+head_h, x1:x2]
-                    
-                    if face_crop.size > 0:
-                        worker_name = identify_worker(face_crop)
+                        color = (0, 0, 255) # Red for violation
+                        # 🔴 Bounding box ko thoda upar aur side se barhaein (Padding)
+                        padding = 20
+                        y_start = max(0, y1 - padding)
+                        y_end = min(frame.shape[0], y1 + int((y2-y1)*0.5)) # Box ka top 50% hissa
+                        x_start = max(0, x1 - padding)
+                        x_end = min(frame.shape[1], x2 + padding)
+                        face_crop = frame[y_start:y_end, x_start:x_end]
+    
+                        if face_crop.size > 0:
+                            worker_name = identify_worker(face_crop)
                     
                     if save_log:
                         # Database logging logic (optional: add rate limiting)
