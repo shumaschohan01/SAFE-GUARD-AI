@@ -54,12 +54,27 @@ def get_registered_workers():
 # --- HELPER FUNCTIONS ---
 def identify_worker(face_img):
     try:
-        if not os.listdir(FACES_DB): return "Unknown_N/A"
-        results = DeepFace.find(img_path=face_img, db_path=FACES_DB, enforce_detection=False, silent=True)
+        if not os.path.exists(FACES_DB) or not os.listdir(FACES_DB): 
+            return "Unknown_N/A"
+        
+        # Recognition model aur detector specify karein
+        results = DeepFace.find(
+            img_path=face_img, 
+            db_path=FACES_DB, 
+            model_name='Facenet',      # Zyada accurate hai
+            detector_backend='opencv', # Fast detection ke liye
+            distance_metric='cosine',  # Recognition accuracy ke liye
+            enforce_detection=False, 
+            silent=True
+        )
+        
         if len(results) > 0 and not results[0].empty:
-            full_path = results[0].iloc[0]['identity']
-            return os.path.basename(full_path).split('.')[0]
-    except: pass
+            # Distance check karein (0.40 se kam matlab match mil gaya)
+            if results[0].iloc[0]['distance'] < 0.40: 
+                full_path = results[0].iloc[0]['identity']
+                return os.path.basename(full_path).split('.')[0]
+    except Exception as e:
+        print(f"Recognition Error: {e}")
     return "Unknown_N/A"
 
 def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
@@ -120,8 +135,19 @@ def run_detection(frame, user_email):
             
             worker_info = "Unknown_N/A"
             if is_unsafe:
-                face_crop = frame[max(0,y1):y2, max(0,x1):x2]
-                if face_crop.size > 0: worker_info = identify_worker(face_crop)
+    # 1. Face ka area nikaalein (Thoda padding ke sath taaki poora chehra aaye)
+                y1_pad, y2_pad = max(0, y1-20), min(frame.shape[0], y2+20)
+                x1_pad, x2_pad = max(0, x1-20), min(frame.shape[1], x2+20)
+                face_crop = frame[y1_pad:y2_pad, x1_pad:x2_pad]
+
+                if face_crop.size > 0:
+        # 2. BGR (OpenCV) ko RGB (DeepFace) mein convert karein
+                    face_crop_rgb = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
+        
+        # 3. Ab identify_worker ko ye RGB image bhejein
+                    worker_info = identify_worker(face_crop_rgb)
+    
+    # Report save karein
                 save_to_report(label, conf, True, worker_info, user_email)
             
             color = (0, 0, 255) if is_unsafe else (0, 255, 0)
