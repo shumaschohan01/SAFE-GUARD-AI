@@ -58,15 +58,7 @@ def identify_worker(face_img):
             return "Unknown_N/A"
         
         # Recognition model aur detector specify karein
-        results = DeepFace.find(
-            img_path=face_img, 
-            db_path=FACES_DB, 
-            model_name='Facenet',      # Zyada accurate hai
-            detector_backend='opencv', # Fast detection ke liye
-            distance_metric='cosine',  # Recognition accuracy ke liye
-            enforce_detection=False, 
-            silent=True
-        )
+        results = DeepFace.find(img_path=face_img, db_path=FACES_DB, enforce_detection=False, silent=True)
         
         if len(results) > 0 and not results[0].empty:
             # Distance check karein (0.40 se kam matlab match mil gaya)
