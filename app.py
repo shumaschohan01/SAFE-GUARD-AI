@@ -16,16 +16,7 @@ API_URL = "https://shumaschohan-safeguard-ai.hf.space/predict/"
 N8N_URL = "https://eom4pk834n2y9tj.m.pipedream.net"
 FACES_DB = "worker_faces"
 
-# --- CONFIGURATION ---
-FACES_DB = "worker_faces"
-
-# Robust folder handling
-if os.path.exists(FACES_DB):
-    if not os.path.isdir(FACES_DB):
-        # Agar worker_faces naam ki koi file pehle se maujood hai jo folder nahi hai
-        os.remove(FACES_DB)
-        os.makedirs(FACES_DB)
-else:
+if not os.path.exists(FACES_DB):
     os.makedirs(FACES_DB, exist_ok=True)
 
 # --- DATABASE ---
@@ -40,13 +31,18 @@ def init_db():
 init_db()
 
 # --- HELPER FUNCTIONS ---
+def get_registered_workers():
+    """Returns a list of worker names from the FACES_DB folder"""
+    files = [f for f in os.listdir(FACES_DB) if f.endswith(('.jpg', '.png', '.jpeg'))]
+    return [f.split('_')[0] for f in files]
+
 def identify_worker(face_img):
     try:
         from deepface import DeepFace
         temp_path = "current_frame.jpg"
         cv2.imwrite(temp_path, face_img)
         
-        # Representations file ko delete karein taaki har baar naya data scan ho
+        # Representations file refresh
         pkl_path = os.path.join(FACES_DB, "representations_vgg_face.pkl")
         if os.path.exists(pkl_path):
             os.remove(pkl_path)
@@ -55,43 +51,22 @@ def identify_worker(face_img):
             img_path=temp_path, 
             db_path=FACES_DB, 
             model_name='VGG-Face', 
-            distance_metric='cosine', # Cosine similarity behtar kaam karti hai
+            distance_metric='cosine',
             enforce_detection=False, 
-            detector_backend='retinaface', # 'opencv' fast hai magar 'retinaface' zyada accurate hai
+            detector_backend='opencv', # Faster for real-time
             silent=True
         )
 
         if len(results) > 0 and not results[0].empty:
             best_match = results[0].iloc[0]
-            # Agar distance 0.4 se zyada hai toh matlab match weak hai
+            # Threshold adjust: 0.4 se kam distance matlab solid match
             if best_match['distance'] < 0.4: 
                 identity = best_match['identity']
                 return os.path.basename(identity).split('.')[0]
                 
     except Exception as e:
         print(f"Recognition Error: {e}")
-    return "Unknown_N/A"
-
-def save_to_report(v_type, v_conf, worker_info, user_email):
-    try:
-        name, wid = worker_info.split("_") if "_" in worker_info else (worker_info, "N/A")
-        clean_eq = v_type.lower().replace("no", "").replace("-", "").strip().capitalize()
-
-        conn = sqlite3.connect("safety_violations.db")
-        conn.execute('''
-            INSERT INTO violations (timestamp, type, status, equipment, worker_name, worker_id, confidence)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), v_type, "⚠️ Unsafe", clean_eq, name, wid, float(v_conf)))
-        conn.commit()
-        conn.close()
-
-        # Alert if confidence is high
-        if v_conf > 0.70 and user_email and "@" in user_email:
-            payload = {"worker": name, "worker_id": wid, "violation": clean_eq, 
-                       "confidence": f"{v_conf:.2f}", "time": datetime.now().strftime("%I:%M %p"), "email": user_email}
-            requests.post(N8N_URL, json=payload, timeout=2)
-    except Exception as e:
-        print(f"DB/Alert Error: {e}")
+    return "Unknown"
 
 def run_detection(frame, user_email):
     try:
@@ -103,25 +78,29 @@ def run_detection(frame, user_email):
             for det in detections:
                 label = str(det.get('class', '')).lower()
                 conf = float(det.get('conf', 0))
-                if conf < 0.40: continue
+                if conf < 0.45: continue
                 
                 x1, y1, x2, y2 = map(int, det.get('bbox', [0,0,0,0]))
                 is_unsafe = any(word in label for word in ["no", "missing", "unsafe"])
                 
-                worker_name = "Scanning..."
-                color = (0, 255, 0) # Default Green
+                name_display = "Scanning..."
+                color = (0, 255, 0)
 
                 if is_unsafe:
-                    color = (0, 0, 255) # Red
-                    head_height = int((y2 - y1) * 0.4)
-                    face_crop = frame[y1:y1+head_height, x1:x2]
-                    if face_crop.size > 0:
-                        worker_name = identify_worker(face_crop)
+                    color = (0, 0, 255)
+                    # Face Identification Logic
+                    # Hum box ko upar se thoda aur expand kar rahe hain taaki face pura aaye
+                    face_h = int((y2 - y1) * 0.5)
+                    face_crop = frame[max(0, y1-20):y1+face_h, x1:x2]
                     
-                    save_to_report(label, conf, worker_name, user_email)
-
+                    if face_crop.size > 0:
+                        name_display = identify_worker(face_crop)
+                    
+                    # Log to DB
+                    # (Optional: isko thoda delay karke save karein taaki duplicate logs na banein)
+                
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                cv2.putText(frame, f"{worker_name.split('_')[0]}: {label}", (x1, y1-10), 
+                cv2.putText(frame, f"{name_display}: {label}", (x1, y1-10), 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
     except:
         pass
@@ -140,7 +119,18 @@ st.set_page_config(page_title="Safe-Guard AI", layout="wide")
 
 with st.sidebar:
     st.title("🛡️ SAFE-GUARD AI")
-    menu = st.radio("Go to", ["📊 Analytics", "👤 Worker Database", "🎥 Live Monitoring", "📁 Batch Processing"])
+    menu = st.radio("Go to", ["📊 Analytics", "👤 Worker Database", "🎥 Live Monitoring"])
+    
+    st.markdown("---")
+    st.subheader("📋 Registered Workers")
+    workers = get_registered_workers()
+    if workers:
+        for w in set(workers): # set() for unique names
+            st.write(f"✅ {w}")
+    else:
+        st.write("No workers registered yet.")
+    
+    st.markdown("---")
     target_email = st.text_input("Alert Email", placeholder="manager@site.com")
 
 if menu == "📊 Analytics":
@@ -155,34 +145,39 @@ if menu == "📊 Analytics":
         st.plotly_chart(px.pie(df, names='worker_name', title="Violations by Worker", hole=0.4), use_container_width=True)
         st.dataframe(df.sort_values(by="timestamp", ascending=False), use_container_width=True)
     else:
-        st.info("No data found.")
+        st.info("No logs in database yet.")
 
 elif menu == "👤 Worker Database":
-    st.header("👤 Register New Worker")
-    name = st.text_input("Full Name")
-    wid = st.text_input("Worker ID")
-    source = st.radio("Source", ["Upload Image", "Use Camera"])
+    st.header("👤 Worker Registration")
+    col1, col2 = st.columns(2)
     
-    img_file = st.file_uploader("Upload Face", type=['jpg','png']) if source == "Upload Image" else st.camera_input("Take Photo")
+    with col1:
+        name = st.text_input("Worker Name (e.g. Ali)")
+        wid = st.text_input("Worker ID (e.g. 101)")
+        source = st.radio("Registration Source", ["Upload", "Camera"])
+        img_file = st.file_uploader("Upload Face Image", type=['jpg','png']) if source == "Upload" else st.camera_input("Capture Face")
 
-    if st.button("Register Now"):
+    if st.button("Register & Save"):
         if name and wid and img_file:
-            # Save file with clean name format
-            clean_name = name.replace(" ", "_")
+            clean_name = name.strip().replace(" ", "_")
             file_path = os.path.join(FACES_DB, f"{clean_name}_{wid}.jpg")
             img = Image.open(img_file).convert("RGB")
             img.save(file_path)
             
-            # Clear DeepFace cache to recognize new person immediately
+            # Reset DeepFace Cache
             pkl = os.path.join(FACES_DB, "representations_vgg_face.pkl")
             if os.path.exists(pkl): os.remove(pkl)
             
-            st.success(f"✅ {name} registered successfully!")
+            st.success(f"Worker {name} has been registered!")
+            st.rerun() # Refresh to update sidebar list
         else:
-            st.error("Please fill all fields.")
+            st.warning("Please provide Name, ID and Image.")
 
 elif menu == "🎥 Live Monitoring":
-    st.header("🎥 Live Safety Feed")
+    st.header("🎥 Real-Time Worker Recognition")
+    if not workers:
+        st.error("⚠️ Pehle 'Worker Database' mein ja kar kisi ko register karein, warna recognition kaam nahi karegi.")
+    
     webrtc_streamer(
         key="safety-stream",
         mode=WebRtcMode.SENDRECV,
@@ -191,13 +186,3 @@ elif menu == "🎥 Live Monitoring":
         media_stream_constraints={"video": True, "audio": False},
         async_processing=True
     )
-
-elif menu == "📁 Batch Processing":
-    st.header("📁 Process Images")
-    uploaded_files = st.file_uploader("Choose images", accept_multiple_files=True)
-    if uploaded_files:
-        for f in uploaded_files:
-            file_bytes = np.asarray(bytearray(f.read()), dtype=np.uint8)
-            frame = cv2.imdecode(file_bytes, 1)
-            processed = run_detection(frame, target_email)
-            st.image(cv2.cvtColor(processed, cv2.COLOR_BGR2RGB), caption=f.name)
