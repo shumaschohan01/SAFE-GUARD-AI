@@ -17,8 +17,6 @@ from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
 API_URL = "https://shumaschohan-safeguard-ai.hf.space/predict/"
 N8N_URL = "https://eom4pk834n2y9tj.m.pipedream.net"
 
-# BASE_DIR definition (Missing in your snippet)
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FACES_DB = os.path.join(BASE_DIR, "worker_faces")
 
 # Ye ensure karega ke folder maujood hai (corrupted files ko delete karke)
@@ -41,6 +39,7 @@ def init_db():
 
 init_db()
 
+
 def get_registered_workers():
     try:
         if not os.path.exists(FACES_DB):
@@ -54,7 +53,7 @@ def get_registered_workers():
 # --- HELPER FUNCTIONS ---
 def identify_worker(face_img):
     try:
-        if not os.path.exists(FACES_DB) or not os.listdir(FACES_DB): return "Unknown_N/A"
+        if not os.listdir(FACES_DB): return "Unknown_N/A"
         results = DeepFace.find(img_path=face_img, db_path=FACES_DB, enforce_detection=False, silent=True)
         if len(results) > 0 and not results[0].empty:
             full_path = results[0].iloc[0]['identity']
@@ -87,6 +86,7 @@ def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
         conn.commit()
         conn.close()
 
+        # 🔴 CHANGED: Pipedream alert improved
         if v_conf > 0.75 and user_email and "@" in user_email:
             payload = {
                 "worker": name,
@@ -152,11 +152,13 @@ if menu == "📊 Analytics":
     df = pd.read_sql_query("SELECT * FROM violations", conn)
     conn.close()
 
+    # --- KPI METRICS ---
     total_violations = len(df)
     total_scanned = total_violations + 50 
     compliance = ((total_scanned - total_violations) / total_scanned * 100) if total_scanned else 100
 
     c1, c2, c3 = st.columns(3)
+    # Colors for Metrics
     c1.metric("👥 Total Scanned", total_scanned)
     c2.metric("⚠️ Total Violations", total_violations, delta=f"{total_violations}", delta_color="inverse")
     c3.metric("✅ Compliance Rate", f"{compliance:.1f}%")
@@ -164,52 +166,63 @@ if menu == "📊 Analytics":
     if not df.empty:
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         
+        # --- ROW 1: MAIN TREND LINE ---
         st.subheader("📈 Hourly Violation Trend")
         trend_df = df.resample('H', on='timestamp').count()['id'].reset_index()
         fig_line = px.area(trend_df, x='timestamp', y='id', 
                            labels={'id': 'Violations'}, 
                            template="plotly_dark",
-                           color_discrete_sequence=['#FF4B4B'])
+                           color_discrete_sequence=['#FF4B4B']) # Safety Red
         fig_line.update_layout(hovermode="x unified")
         st.plotly_chart(fig_line, use_container_width=True)
 
+        # --- ROW 2: DETAILED TABLE ---
         st.subheader("📝 Detailed Violation Logs")
         st.dataframe(df.sort_values(by="timestamp", ascending=False), use_container_width=True)
 
         st.markdown("---")
         
+        # --- ROW 3: PIE CHART & BAR CHART (The "Acha Look" Section) ---
         st.header("🔍 Visual Breakdown")
         col_pie, col_bar = st.columns(2)
 
         with col_pie:
             st.subheader("👤 Violations by Worker")
+            # Custom Color Palette (Sunset/Safety Theme)
             custom_colors = ['#FF4B4B', '#FF8C00', '#FFD700', '#C0C0C0', '#808080']
+            
             fig_pie = px.pie(df, names='worker_name', hole=0.5, 
                              template="plotly_dark",
                              color_discrete_sequence=custom_colors)
-            fig_pie.update_traces(textinfo='percent+label', pull=[0.05, 0, 0, 0])
-            fig_pie.update_layout(showlegend=False)
+            
+            fig_pie.update_traces(textinfo='percent+label', pull=[0.05, 0, 0, 0]) # Pehla slice thora bahar
+            fig_pie.update_layout(showlegend=False) # Legend hata di taaki saaf dikhe
             st.plotly_chart(fig_pie, use_container_width=True)
 
         with col_bar:
             st.subheader("🛠️ Equipment Analysis")
             eq_counts = df['equipment'].value_counts().reset_index()
             eq_counts.columns = ['Equipment', 'Count']
+            
+            # Gradient Bar Chart
             fig_bar = px.bar(eq_counts, x='Equipment', y='Count', 
                              color='Count',
-                             color_continuous_scale='Reds',
+                             color_continuous_scale='Reds', # Red gradient
                              template="plotly_dark")
             fig_bar.update_layout(coloraxis_showscale=False)
             st.plotly_chart(fig_bar, use_container_width=True)
 
+        # --- NEW: TIME HEATMAP (Analysis Table ke neeche) ---
         st.subheader("⏰ Peak Violation Hours (Heatmap)")
         df['hour'] = df['timestamp'].dt.hour
         hour_counts = df.groupby('hour').size().reset_index(name='Count')
+        
         fig_hour = px.bar(hour_counts, x='hour', y='Count', 
                           labels={'hour': 'Hour of Day (24h)'},
                           template="plotly_dark",
-                          color_discrete_sequence=['#FFA500'])
+                          color_discrete_sequence=['#FFA500']) # Orange Theme
         st.plotly_chart(fig_hour, use_container_width=True)
+
     else:
         st.info("Abhi tak koi data record nahi hua.")
         
@@ -244,9 +257,10 @@ elif menu == "👤 Worker Database":
                     st.error(f"Error saving image: {e}")
             else:
                 st.error("Naam, ID aur Photo lazmi hain.")
-
+                
 elif menu == "🎥 Live Monitoring":
     st.header("🎥 Live Feed")
+    # Multiple STUN servers for better connectivity
     rtc_config = {"iceServers": [
         {"urls": ["stun:stun.l.google.com:19302"]},
         {"urls": ["stun:stun1.l.google.com:19302"]},
@@ -254,7 +268,7 @@ elif menu == "🎥 Live Monitoring":
     ]}
 
     webrtc_streamer(
-        key=f"live-monitoring-{target_email}",
+        key=f"live-monitoring-{target_email}", # Dynamic key fixes conflicts
         mode=WebRtcMode.SENDRECV,
         video_processor_factory=lambda: VideoProcessor(target_email),
         rtc_configuration=rtc_config,
