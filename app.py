@@ -231,6 +231,10 @@ elif menu == "👤 Worker Database":
     st.header("👤 Personnel Management System")
     st.markdown("Register and manage authorized personnel for PPE monitoring.")
     
+    # Session state for camera control
+    if "cam_started" not in st.session_state:
+        st.session_state.cam_started = False
+
     col1, col2 = st.columns([1.2, 1])
 
     with col1:
@@ -239,23 +243,35 @@ elif menu == "👤 Worker Database":
             new_name = st.text_input("Full Name", placeholder="e.g. Ahmad Ali")
             new_id = st.text_input("Worker ID", placeholder="e.g. W-405")
             
-            # Professional Tabs: Upload vs Camera
-            tab_upload, tab_camera = st.tabs(["📁 Upload Photo", "📸 Use Camera"])
+            tab_upload, tab_camera = st.tabs(["📁 Upload Photo", "📸 Camera Registration"])
             
             img_input = None
             
+            # --- TAB 1: UPLOAD ---
             with tab_upload:
-                st.info("System se file select karein. (Is waqt camera band rahega)")
+                st.session_state.cam_started = False # Upload pe camera hamesha off
+                st.info("System se file select karein.")
                 img_file = st.file_uploader("Select worker image", type=['jpg', 'jpeg', 'png'], key="file_reg")
                 if img_file: 
                     img_input = img_file
                 
+            # --- TAB 2: CAMERA WITH CONTROLS ---
             with tab_camera:
-                # Camera sirf is tab par click karne se hi active hoga
-                st.warning("Face ko frame ke beech mein rakhein.")
-                cam_file = st.camera_input("Capture worker face", key="worker_cam")
-                if cam_file: 
-                    img_input = cam_file
+                c1, c2 = st.columns(2)
+                if c1.button("🎥 Start Camera", use_container_width=True):
+                    st.session_state.cam_started = True
+                
+                if c2.button("🛑 Stop Camera", use_container_width=True):
+                    st.session_state.cam_started = False
+                    st.rerun()
+
+                if st.session_state.cam_started:
+                    cam_file = st.camera_input("Capture worker face", key="worker_cam")
+                    if cam_file: 
+                        img_input = cam_file
+                else:
+                    st.light_publisher = None # Clear camera instance
+                    st.info("Camera start karne ke liye button dabayein.")
 
             st.markdown("---")
             if st.button("🚀 Complete Registration", use_container_width=True, type="primary"):
@@ -270,12 +286,13 @@ elif menu == "👤 Worker Database":
                             img = Image.open(img_input).convert("RGB")
                             img.save(save_path)
                             
-                            # Cache clear for DeepFace
+                            # Cache clear
                             if os.path.exists(FACES_DB):
                                 for f in os.listdir(FACES_DB):
                                     if f.endswith(".pkl"):
                                         os.remove(os.path.join(FACES_DB, f))
                             
+                            st.session_state.cam_started = False # Reset camera after save
                             st.toast(f"Success! {new_name} registered.", icon="✅")
                             time.sleep(1)
                             st.rerun()
@@ -284,14 +301,11 @@ elif menu == "👤 Worker Database":
                 else:
                     st.warning("⚠️ Please provide Name, ID, and a Photo.")
 
-    # --- SIDE LIST: Registered Workers (No Images) ---
+    # --- SIDE LIST: Registered Workers (Purely Text-Based) ---
     with col2:
         st.subheader("📋 Registered Personnel")
-        
-        # Search filter
         search_q = st.text_input("🔍 Search Worker", placeholder="Type name or ID...")
         
-        # Main list container
         with st.container(height=520, border=True):
             if not os.path.exists(FACES_DB):
                 st.caption("Database folder not found.")
@@ -302,23 +316,17 @@ elif menu == "👤 Worker Database":
                     st.info("No workers registered yet.")
                 else:
                     for f in all_files:
-                        # File name se name aur ID nikaalna
                         display_name = f.split('.')[0].replace("_", " ")
                         
                         if search_q.lower() in display_name.lower():
-                            # Ek saaf suthra row format
-                            with st.container(border=False):
-                                c_name, c_del = st.columns([4, 1])
-                                
-                                # Sirf naam aur ID show hogi
-                                c_name.markdown(f"**👤 {display_name}**")
-                                
-                                # Delete button
-                                if c_del.button("🗑️", key=f"del_{f}", help=f"Delete {display_name}"):
-                                    os.remove(os.path.join(FACES_DB, f))
-                                    st.rerun()
-                                
-                                st.divider() # Har worker ke baad line
+                            # Clean Row
+                            c_name, c_del = st.columns([5, 1])
+                            c_name.markdown(f"**👤 {display_name}**")
+                            
+                            if c_del.button("🗑️", key=f"del_{f}"):
+                                os.remove(os.path.join(FACES_DB, f))
+                                st.rerun()
+                            st.divider()
                 
 elif menu == "🎥 Live Monitoring":
     st.header("🎥 Live Feed")
