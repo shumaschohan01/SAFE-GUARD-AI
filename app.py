@@ -57,23 +57,24 @@ def identify_worker(face_img):
         if not os.path.exists(FACES_DB) or not os.listdir(FACES_DB): 
             return "Unknown_N/A"
         
-        # Recognition process
         results = DeepFace.find(
             img_path=face_img, 
             db_path=FACES_DB, 
-            model_name='Facenet', 
+            model_name='ArcFace', 
             distance_metric='cosine',
+            detector_backend='opencv',
             enforce_detection=False, 
             silent=True
         )
         
         if len(results) > 0 and not results[0].empty:
-            # Cosine distance: Jitna chota hoga, utna pakka match hoga
-            # 0.40 ek standard "Safe" threshold hai
+            print(results[0])  # DEBUG
+            
             best_match = results[0].iloc[0]
-            if best_match['distance'] < 0.40: 
+            
+            # relaxed threshold
+            if best_match['distance'] < 0.55:  
                 full_path = best_match['identity']
-                # File name se worker ka naam nikalna (e.g. Ahmad_123.jpg -> Ahmad_123)
                 return os.path.basename(full_path).split('.')[0]
                 
     except Exception as e:
