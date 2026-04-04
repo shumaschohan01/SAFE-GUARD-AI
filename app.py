@@ -228,36 +228,86 @@ if menu == "📊 Analytics":
         st.info("Abhi tak koi data record nahi hua.")
         
 elif menu == "👤 Worker Database":
-    st.header("👤 Worker Registration")
-    col1, col2 = st.columns(2)
-    with col1:
-        method = st.radio("Method", ["Camera", "Upload"])
-        new_name = st.text_input("Name")
-        new_id = st.text_input("ID")
-        img_input = st.camera_input("Photo") if method == "Camera" else st.file_uploader("Photo", type=['jpg', 'png'])
-        
-        if st.button("Register Now"):
-            if new_name and new_id and img_input:
-                os.makedirs(FACES_DB, exist_ok=True)
-                
-                clean_name = new_name.strip().replace(" ", "_")
-                filename = f"{clean_name}_{new_id.strip()}.jpg"
-                save_path = os.path.join(FACES_DB, filename)
+    st.header("👤 Personnel Management System")
+    st.markdown("Register and manage authorized personnel for PPE monitoring.")
+    
+    col1, col2 = st.columns([1.2, 1]) # Column 1 thoda bada rakha hai form ke liye
 
-                try:
-                    img = Image.open(img_input).convert("RGB")
-                    img.save(save_path)
-                    
-                    for f in os.listdir(FACES_DB):
-                        if f.endswith(".pkl"):
-                            os.remove(os.path.join(FACES_DB, f))
-                    
-                    st.success(f"✅ {new_name} registered!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error saving image: {e}")
+    with col1:
+        st.subheader("🆕 New Registration")
+        # Ek sundar box (container) banate hain form ke liye
+        with st.container(border=True):
+            new_name = st.text_input("Full Name", placeholder="e.g. Ahmad Ali")
+            new_id = st.text_input("Worker ID", placeholder="e.g. W-405")
+            
+            # Professional Look: Method switch karne ke liye Tabs use kiye hain
+            tab_upload, tab_camera = st.tabs(["📁 Upload Photo", "📸 Use Camera"])
+            
+            img_input = None
+            with tab_upload:
+                img_file = st.file_uploader("Select worker image", type=['jpg', 'jpeg', 'png'], key="file_reg")
+                if img_file: img_input = img_file
+                
+            with tab_camera:
+                cam_file = st.camera_input("Capture worker face")
+                if cam_file: img_input = cam_file
+
+            st.markdown("---")
+            if st.button("🚀 Complete Registration", use_container_width=True, type="primary"):
+                if new_name and new_id and img_input:
+                    os.makedirs(FACES_DB, exist_ok=True)
+                    clean_name = new_name.strip().replace(" ", "_")
+                    filename = f"{clean_name}_{new_id.strip()}.jpg"
+                    save_path = os.path.join(FACES_DB, filename)
+
+                    try:
+                        with st.spinner("Processing facial data..."):
+                            img = Image.open(img_input).convert("RGB")
+                            img.save(save_path)
+                            
+                            # Cache clear for DeepFace
+                            for f in os.listdir(FACES_DB):
+                                if f.endswith(".pkl"):
+                                    os.remove(os.path.join(FACES_DB, f))
+                            
+                            st.toast(f"Success! {new_name} added.", icon="✅")
+                            time.sleep(1)
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f"Save failed: {e}")
+                else:
+                    st.warning("⚠️ Please provide Name, ID, and a Photo.")
+
+    # --- SIDE LIST: Registered Workers ---
+    with col2:
+        st.subheader("📋 Registered Personnel")
+        
+        # Search bar for the list
+        search_q = st.text_input("🔍 Search Worker", placeholder="Type name...")
+        
+        # Worker List container
+        with st.container(height=500, border=True):
+            all_files = [f for f in os.listdir(FACES_DB) if f.lower().endswith(('.jpg', '.png', '.jpeg'))]
+            
+            if not all_files:
+                st.info("No workers registered yet.")
             else:
-                st.error("Naam, ID aur Photo lazmi hain.")
+                for f in all_files:
+                    worker_display_name = f.split('.')[0].replace("_", " ")
+                    
+                    # Search filter logic
+                    if search_q.lower() in worker_display_name.lower():
+                        # Display each worker in a mini-card
+                        with st.expander(f"👤 {worker_display_name}"):
+                            c_img, c_del = st.columns([3, 1])
+                            # Worker ki thumbnail dikhana
+                            img_path = os.path.join(FACES_DB, f)
+                            c_img.image(img_path, use_container_width=True)
+                            
+                            # Delete button
+                            if c_del.button("🗑️", key=f"del_{f}", help="Remove worker"):
+                                os.remove(img_path)
+                                st.rerun()
                 
 elif menu == "🎥 Live Monitoring":
     st.header("🎥 Live Feed")
