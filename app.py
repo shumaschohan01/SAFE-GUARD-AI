@@ -41,42 +41,35 @@ init_db()
 
 # --- HELPER FUNCTIONS ---
 def identify_worker(face_img):
-    """DeepFace identity check with cache cleaning"""
     try:
         from deepface import DeepFace
+        temp_path = "current_frame.jpg"
+        cv2.imwrite(temp_path, face_img)
         
-        if not os.listdir(FACES_DB):
-            return "Unknown_N/A"
-
-        # Force refresh DeepFace database
+        # Representations file ko delete karein taaki har baar naya data scan ho
         pkl_path = os.path.join(FACES_DB, "representations_vgg_face.pkl")
         if os.path.exists(pkl_path):
             os.remove(pkl_path)
 
-        temp_path = "temp_capture.jpg"
-        cv2.imwrite(temp_path, face_img)
-        
         results = DeepFace.find(
             img_path=temp_path, 
             db_path=FACES_DB, 
             model_name='VGG-Face', 
+            distance_metric='cosine', # Cosine similarity behtar kaam karti hai
             enforce_detection=False, 
-            silent=True,
-            detector_backend='opencv'
+            detector_backend='retinaface', # 'opencv' fast hai magar 'retinaface' zyada accurate hai
+            silent=True
         )
 
         if len(results) > 0 and not results[0].empty:
-            full_path = results[0].iloc[0]['identity']
-            filename = os.path.basename(full_path)
-            # Remove extension (.jpg)
-            return os.path.splitext(filename)[0]
-            
+            best_match = results[0].iloc[0]
+            # Agar distance 0.4 se zyada hai toh matlab match weak hai
+            if best_match['distance'] < 0.4: 
+                identity = best_match['identity']
+                return os.path.basename(identity).split('.')[0]
+                
     except Exception as e:
-        print(f"Face ID Error: {e}")
-    finally:
-        if os.path.exists("temp_capture.jpg"):
-            os.remove("temp_capture.jpg")
-            
+        print(f"Recognition Error: {e}")
     return "Unknown_N/A"
 
 def save_to_report(v_type, v_conf, worker_info, user_email):
@@ -120,8 +113,8 @@ def run_detection(frame, user_email):
 
                 if is_unsafe:
                     color = (0, 0, 255) # Red
-                    # Crop for Face ID (expand bbox slightly)
-                    face_crop = frame[max(0, y1-30):y2+30, max(0, x1-30):x2+30]
+                    head_height = int((y2 - y1) * 0.4)
+                    face_crop = frame[y1:y1+head_height, x1:x2]
                     if face_crop.size > 0:
                         worker_name = identify_worker(face_crop)
                     
