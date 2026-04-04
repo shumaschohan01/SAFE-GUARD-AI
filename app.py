@@ -117,9 +117,9 @@ def run_detection(frame, user_email, save_log=True):
                         if face_crop.size > 0:
                             worker_name = identify_worker(face_crop)
                     
-                    if save_log:
+                        if save_log:
                         # Database logging logic (optional: add rate limiting)
-                        pass
+                            pass
 
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
                 cv2.putText(frame, f"{worker_name}: {label}", (x1, y1-10), 
