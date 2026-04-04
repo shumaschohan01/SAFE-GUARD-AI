@@ -10,7 +10,7 @@ import av
 from PIL import Image
 from datetime import datetime
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
-from deepface import DeepFace
+
 
 # --- CONFIGURATION ---
 API_URL = "https://shumaschohan-safeguard-ai.hf.space/predict/"
