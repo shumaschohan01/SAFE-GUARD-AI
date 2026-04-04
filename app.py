@@ -12,7 +12,6 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from datetime import datetime
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
-from deepface import DeepFace # Ensure this is imported
 
 # --- CONFIGURATION ---
 API_URL = "https://shumaschohan-safeguard-ai.hf.space/predict/"
