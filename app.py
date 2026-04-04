@@ -1,242 +1,169 @@
 import streamlit as st
 import cv2
-import requests 
+import requests
 import numpy as np
 import pandas as pd
 import sqlite3
 import os
+import time
 import av
-import plotly.express as px
 from PIL import Image
 from datetime import datetime
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
+from deepface import DeepFace
 
-# --- 1. CONFIGURATION & DIRECTORY SETUP ---
+# --- CONFIGURATION ---
+
 API_URL = "https://shumaschohan-safeguard-ai.hf.space/predict/"
+# n8n tunnel URL yahan update karein
 N8N_URL = "https://eom4pk834n2y9tj.m.pipedream.net"
 FACES_DB = "worker_faces"
 
-# Ensure FACES_DB is a directory
-if os.path.exists(FACES_DB):
-    if not os.path.isdir(FACES_DB):
-        os.remove(FACES_DB)
-        os.makedirs(FACES_DB, exist_ok=True)
-else:
-    os.makedirs(FACES_DB, exist_ok=True)
+if not os.path.exists(FACES_DB): os.makedirs(FACES_DB)
 
-# --- 2. DATABASE INITIALIZATION ---
+# --- DATABASE SETUP ---
 def init_db():
-    conn = sqlite3.connect("safety_violations.db", check_same_thread=False)
+    conn = sqlite3.connect("safety_violations.db")
     conn.execute('''CREATE TABLE IF NOT EXISTS violations 
-                    (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT, type TEXT, 
-                     status TEXT, equipment TEXT, worker_name TEXT, worker_id TEXT, confidence REAL)''')
-    conn.commit()
-    conn.close()
+                    (id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                     timestamp TEXT, type TEXT, status TEXT,
+                     equipment TEXT, worker_name TEXT,
+                     worker_id TEXT, confidence REAL)''')
+    conn.commit(); conn.close()
 
 init_db()
 
-# --- 3. HELPER FUNCTIONS ---
-
-def get_registered_workers():
-    """Returns a unique list of registered worker names from folder."""
-    try:
-        files = [f for f in os.listdir(FACES_DB) if f.lower().endswith(('.jpg', '.png', '.jpeg'))]
-        return sorted(list(set([f.split('_')[0] for f in files])))
-    except Exception:
-        return []
-
+# --- ALERT & IDENTIFICATION LOGIC ---
 def identify_worker(face_img):
-    """DeepFace matching with Facenet & MTCNN for high accuracy."""
     try:
-        from deepface import DeepFace
-        
-        # Save temp crop for analysis
-        temp_path = "current_face_scan.jpg"
-        cv2.imwrite(temp_path, face_img)
-        
-        # Clear DeepFace cache to ensure new registrations are picked up
-        pkl_path = os.path.join(FACES_DB, "representations_facenet.pkl")
-        if os.path.exists(pkl_path):
-            os.remove(pkl_path)
-
-        # Facenet is more robust for side-faces and low light
-        results = DeepFace.find(
-            img_path=temp_path, 
-            db_path=FACES_DB, 
-            model_name='Facenet', 
-            distance_metric='cosine',
-            enforce_detection=False, 
-            detector_backend='mtcnn', # Best for finding faces in complex backgrounds
-            silent=True
-        )
-
+        if not os.listdir(FACES_DB): return "Unknown_N/A"
+        results = DeepFace.find(img_path=face_img, db_path=FACES_DB, enforce_detection=False, silent=True)
         if len(results) > 0 and not results[0].empty:
-            best_match = results[0].iloc[0]
-            # 0.50 - 0.60 is the sweet spot for Facenet cosine distance
-            if best_match['distance'] < 0.55: 
-                identity_path = best_match['identity']
-                return os.path.basename(identity_path).split('_')[0]
-                
-    except Exception as e:
-        print(f"Recognition Error: {e}")
-    return "Unknown"
+            full_path = results[0].iloc[0]['identity']
+            return os.path.basename(full_path).split('.')[0]
+    except: pass
+    return "Unknown_N/A"
 
-def save_violation(v_type, conf, worker_name, user_email):
-    """Saves violation to SQLite and sends alert."""
+def send_to_n8n(name, eq, conf, user_email):
+    if not user_email: return 
+    payload = {
+        "worker": name, "equipment": eq, "confidence": f"{conf:.2%}",
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "receiver_email": user_email 
+    }
+    try: requests.post(N8N_URL, json=payload, timeout=2)
+    except: pass
+
+def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
+    # Duplicate check logic
+    if "violation_cache" not in st.session_state: st.session_state.violation_cache = {}
+    cache_key = f"{worker_info}_{v_type}"
+    if cache_key in st.session_state.violation_cache:
+        if time.time() - st.session_state.violation_cache[cache_key] < 30: return
+
+    if not is_unsafe: return 
     try:
+        name, wid = worker_info.split("_") if "_" in worker_info else (worker_info, "N/A")
         clean_eq = v_type.lower().replace("no", "").replace("-", "").strip().capitalize()
         conn = sqlite3.connect("safety_violations.db")
-        conn.execute('''INSERT INTO violations (timestamp, type, status, equipment, worker_name, worker_id, confidence)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)''', 
-                     (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), v_type, "⚠️ Unsafe", clean_eq, worker_name, "N/A", float(conf)))
-        conn.commit()
-        conn.close()
+        conn.execute('''INSERT INTO violations (timestamp, type, status, equipment, worker_name, worker_id, confidence) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                     (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), v_type, "⚠️ Unsafe", clean_eq, name, wid, float(v_conf)))
+        conn.commit(); conn.close()
+        
+        st.session_state.violation_cache[cache_key] = time.time()
+        if float(v_conf) > 0.60: send_to_n8n(name, clean_eq, float(v_conf), user_email)
+    except: pass
 
-        # Webhook Alert
-        if conf > 0.70 and user_email and "@" in user_email:
-            payload = {"worker": worker_name, "violation": clean_eq, "time": datetime.now().strftime("%I:%M %p"), "email": user_email}
-            requests.post(N8N_URL, json=payload, timeout=2)
-    except Exception as e:
-        print(f"Log Error: {e}")
-
-def run_detection(frame, user_email, save_log=True):
-    """Main Detection Logic for both Live and Batch."""
+# --- DETECTION ENGINE ---
+def run_detection(frame, user_email):
     try:
         _, img_encoded = cv2.imencode('.jpg', frame)
-        response = requests.post(API_URL, files={'file': img_encoded.tobytes()}, timeout=10)
-        
-        if response.status_code == 200:
-            detections = response.json().get('detections', [])
-            for det in detections:
-                label = str(det.get('class', '')).lower()
-                conf = float(det.get('conf', 0))
-                if conf < 0.40: continue
-                
-                x1, y1, x2, y2 = map(int, det.get('bbox', [0,0,0,0]))
-                is_unsafe = any(word in label for word in ["no", "missing", "unsafe"])
-                
-                name_tag = "Scanning..."
-                color = (0, 255, 0) # Green for safe
-
-                if is_unsafe:
-                    color = (0, 0, 255) # Red for danger
-                    # Expand crop to ensure face is captured
-                    y_top = max(0, y1 - 50)
-                    y_bottom = min(frame.shape[0], y1 + int((y2 - y1) * 0.6))
-                    face_crop = frame[y_top:y_bottom, max(0, x1-20):min(frame.shape[1], x2+20)]
-                    
-                    if face_crop.size > 0:
-                        name_tag = identify_worker(face_crop)
-                    
-                    if save_log and name_tag != "Scanning...":
-                        save_violation(label, conf, name_tag, user_email)
-
-                # Draw UI
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
-                cv2.putText(frame, f"{name_tag}: {label}", (x1, y1-10), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-    except Exception as e:
-        print(f"Detection Error: {e}")
+        response = requests.post(API_URL, files={'file': img_encoded.tobytes()}, timeout=3)
+        detections = response.json().get('detections', [])
+        for det in detections:
+            label, conf = det['class'], det['conf']
+            x1, y1, x2, y2 = map(int, det['bbox'])
+            is_unsafe = any(w in label.lower() for w in ["no", "missing", "unsafe"])
+            
+            worker_info = "Unknown_N/A"
+            if is_unsafe:
+                face_crop = frame[max(0,y1):y2, max(0,x1):x2]
+                if face_crop.size > 0: worker_info = identify_worker(face_crop)
+                save_to_report(label, conf, True, worker_info, user_email)
+            
+            color = (0, 0, 255) if is_unsafe else (0, 255, 0)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
+            cv2.putText(frame, f"{worker_info.split('_')[0]}: {label}", (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+    except: pass
     return frame
 
-# --- 4. VIDEO STREAMING CLASS ---
+# --- WEBRTC ---
 class VideoProcessor(VideoProcessorBase):
-    def __init__(self, email):
-        self.email = email
+    def __init__(self, user_email):
+        self.user_email = user_email
     def recv(self, frame):
         img = frame.to_ndarray(format="bgr24")
-        img = run_detection(img, self.email)
-        return av.VideoFrame.from_ndarray(img, format="bgr24")
+        return av.VideoFrame.from_ndarray(run_detection(img, self.user_email), format="bgr24")
 
-# --- 5. STREAMLIT UI ---
-st.set_page_config(page_title="Safe-Guard AI | PPE & Face ID", layout="wide")
+# --- UI SETUP ---
+st.set_page_config(page_title="Safe-Guard AI", layout="wide")
 
 with st.sidebar:
     st.title("🛡️ SAFE-GUARD AI")
-    menu = st.radio("Navigation", ["📊 Analytics", "👤 Worker Database", "🎥 Live Monitoring", "📁 Batch Processing"])
+    menu = st.radio("Navigation", ["📊 Analytics", "👤 Worker Database", "🎥 Live Monitoring", "📁 Batch"])
     
     st.markdown("---")
-    st.subheader("📋 Registered Workers")
-    current_workers = get_registered_workers()
-    if current_workers:
-        for w in current_workers:
-            st.write(f"✅ {w}")
-    else:
-        st.caption("No workers in database.")
-    
-    st.markdown("---")
-    target_email = st.text_input("Alert Email", placeholder="manager@site.com")
+    st.subheader("⚙️ Alert Settings")
+    target_email = st.text_input("Alert Email", placeholder="example@gmail.com")
+    if not target_email:
+        st.warning("⚠️ Email likhein taaki alerts mil saken.")
 
-# --- 6. PAGE LOGIC ---
-
+# --- PAGES ---
 if menu == "📊 Analytics":
-    st.header("📊 Safety Analytics Dashboard")
+    st.header("📊 Violation Insights")
     conn = sqlite3.connect("safety_violations.db")
     df = pd.read_sql_query("SELECT * FROM violations", conn)
-    conn.close()
-    
     if not df.empty:
-        col1, col2 = st.columns(2)
-        with col1:
-            st.plotly_chart(px.pie(df, names='worker_name', title="Violations by Worker", hole=0.4), use_container_width=True)
-        with col2:
-            st.plotly_chart(px.bar(df, x='equipment', title="Violation Type Count"), use_container_width=True)
-        st.subheader("Detailed Logs")
-        st.dataframe(df.sort_values(by="timestamp", ascending=False), use_container_width=True)
-    else:
-        st.info("Database is empty. Start monitoring to collect data.")
+        st.metric("Total Violations", len(df))
+        st.dataframe(df.sort_values(by='timestamp', ascending=False), use_container_width=True)
+    else: st.info("No data.")
 
 elif menu == "👤 Worker Database":
     st.header("👤 Worker Registration")
-    c1, c2 = st.columns(2)
-    with c1:
-        new_name = st.text_input("Full Name (e.g., Ali)")
-        new_id = st.text_input("Worker ID (e.g., 101)")
-        reg_source = st.radio("Photo Source", ["Upload File", "Take Picture"])
-        img_input = st.file_uploader("Upload Image", type=['jpg','png']) if reg_source == "Upload File" else st.camera_input("Capture")
-
-    if st.button("Register Worker"):
-        if new_name and new_id and img_input:
-            clean_name = new_name.strip().replace(" ", "_")
-            save_path = os.path.join(FACES_DB, f"{clean_name}_{new_id}.jpg")
-            Image.open(img_input).convert("RGB").save(save_path)
-            
-            # Reset Cache
-            for f in os.listdir(FACES_DB):
-                if f.endswith(".pkl"): os.remove(os.path.join(FACES_DB, f))
-                
-            st.success(f"Registered {new_name} successfully!")
+    col1, col2 = st.columns(2)
+    with col1:
+        method = st.radio("Method", ["Camera", "Upload"])
+        name = st.text_input("Name")
+        emp_id = st.text_input("ID")
+        img_file = st.camera_input("Photo") if method == "Camera" else st.file_uploader("Photo", type=['jpg', 'png'])
+        if st.button("Register") and img_file and name and emp_id:
+            Image.open(img_file).convert('RGB').save(os.path.join(FACES_DB, f"{name}_{emp_id}.jpg"))
+            st.success("Registered!")
             st.rerun()
-        else:
-            st.error("Please provide all details.")
+    with col2:
+        st.subheader("Personnel List")
+        for f in os.listdir(FACES_DB):
+            if "_" in f:
+                c1, c2 = st.columns([4, 1])
+                c1.write(f"✅ {f.split('.')[0]}")
+                if c2.button("🗑️", key=f):
+                    os.remove(os.path.join(FACES_DB, f))
+                    st.rerun()
 
 elif menu == "🎥 Live Monitoring":
-    st.header("🎥 Real-Time PPE & Face Recognition")
-    if not current_workers:
-        st.warning("⚠️ Database empty! Recognition Unknown dikhayega.")
-        
+    st.header("Live AI Guard")
     webrtc_streamer(
-        key="safety-live",
-        mode=WebRtcMode.SENDRECV,
+        key="cam", 
+        mode=WebRtcMode.SENDRECV, 
         video_processor_factory=lambda: VideoProcessor(target_email),
-        rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
         media_stream_constraints={"video": True, "audio": False},
         async_processing=True
     )
 
-elif menu == "📁 Batch Processing":
-    st.header("📁 Batch Image Analysis")
-    uploaded_images = st.file_uploader("Upload multiple images", type=['jpg','png','jpeg'], accept_multiple_files=True)
-    
-    if uploaded_images:
-        if st.button("Analyze All"):
-            grid = st.columns(2)
-            for i, img_file in enumerate(uploaded_images):
-                file_bytes = np.asarray(bytearray(img_file.read()), dtype=np.uint8)
-                opencv_img = cv2.imdecode(file_bytes, 1)
-                
-                with st.spinner(f"Analyzing {img_file.name}..."):
-                    result_img = run_detection(opencv_img, target_email, save_log=True)
-                    with grid[i % 2]:
-                        st.image(cv2.cvtColor(result_img, cv2.COLOR_BGR2RGB), caption=f"Processed: {img_file.name}")
-            st.success("Batch Analysis Complete!")
+elif menu == "📁 Batch":
+    st.header("Media Analysis")
+    f = st.file_uploader("Select Image", type=['jpg','png'])
+    if f:
+        img_np = cv2.cvtColor(np.array(Image.open(f)), cv2.COLOR_RGB2BGR)
+        st.image(cv2.cvtColor(run_detection(img_np, target_email), cv2.COLOR_BGR2RGB), use_column_width=True)
