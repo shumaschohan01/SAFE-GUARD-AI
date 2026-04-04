@@ -11,12 +11,17 @@ from PIL import Image
 from datetime import datetime
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION & DIRECTORY FIX ---
 API_URL = "https://shumaschohan-safeguard-ai.hf.space/predict/"
 N8N_URL = "https://eom4pk834n2y9tj.m.pipedream.net"
 FACES_DB = "worker_faces"
 
-if not os.path.exists(FACES_DB):
+# Sakht check: Agar FACES_DB file hai toh delete karo, warna folder banao
+if os.path.exists(FACES_DB):
+    if not os.path.isdir(FACES_DB):
+        os.remove(FACES_DB)
+        os.makedirs(FACES_DB, exist_ok=True)
+else:
     os.makedirs(FACES_DB, exist_ok=True)
 
 # --- DATABASE ---
@@ -32,20 +37,24 @@ init_db()
 
 # --- HELPER FUNCTIONS ---
 def get_registered_workers():
-    """Returns a list of worker names from the FACES_DB folder"""
-    files = [f for f in os.listdir(FACES_DB) if f.endswith(('.jpg', '.png', '.jpeg'))]
-    return [f.split('_')[0] for f in files]
+    """Registered workers ki unique list nikalta hai"""
+    try:
+        if not os.path.isdir(FACES_DB): return []
+        files = [f for f in os.listdir(FACES_DB) if f.endswith(('.jpg', '.png', '.jpeg'))]
+        return sorted(list(set([f.split('_')[0] for f in files])))
+    except:
+        return []
 
 def identify_worker(face_img):
+    """DeepFace matching logic"""
     try:
         from deepface import DeepFace
-        temp_path = "current_frame.jpg"
+        temp_path = "current_analysis.jpg"
         cv2.imwrite(temp_path, face_img)
         
-        # Representations file refresh
+        # Representations refresh
         pkl_path = os.path.join(FACES_DB, "representations_vgg_face.pkl")
-        if os.path.exists(pkl_path):
-            os.remove(pkl_path)
+        if os.path.exists(pkl_path): os.remove(pkl_path)
 
         results = DeepFace.find(
             img_path=temp_path, 
@@ -53,55 +62,54 @@ def identify_worker(face_img):
             model_name='VGG-Face', 
             distance_metric='cosine',
             enforce_detection=False, 
-            detector_backend='opencv', # Faster for real-time
+            detector_backend='opencv',
             silent=True
         )
 
         if len(results) > 0 and not results[0].empty:
             best_match = results[0].iloc[0]
-            # Threshold adjust: 0.4 se kam distance matlab solid match
             if best_match['distance'] < 0.4: 
                 identity = best_match['identity']
                 return os.path.basename(identity).split('.')[0]
-                
     except Exception as e:
         print(f"Recognition Error: {e}")
     return "Unknown"
 
-def run_detection(frame, user_email):
+def run_detection(frame, user_email, save_log=True):
+    """YOLO Detection + Face Recognition ka main engine"""
     try:
         _, img_encoded = cv2.imencode('.jpg', frame)
-        response = requests.post(API_URL, files={'file': img_encoded.tobytes()}, timeout=5)
+        response = requests.post(API_URL, files={'file': img_encoded.tobytes()}, timeout=8)
         
         if response.status_code == 200:
             detections = response.json().get('detections', [])
             for det in detections:
                 label = str(det.get('class', '')).lower()
                 conf = float(det.get('conf', 0))
-                if conf < 0.45: continue
+                if conf < 0.40: continue
                 
                 x1, y1, x2, y2 = map(int, det.get('bbox', [0,0,0,0]))
                 is_unsafe = any(word in label for word in ["no", "missing", "unsafe"])
                 
-                name_display = "Scanning..."
-                color = (0, 255, 0)
+                worker_name = "Scanning..."
+                color = (0, 255, 0) # Safe
 
                 if is_unsafe:
-                    color = (0, 0, 255)
-                    # Face Identification Logic
-                    # Hum box ko upar se thoda aur expand kar rahe hain taaki face pura aaye
-                    face_h = int((y2 - y1) * 0.5)
-                    face_crop = frame[max(0, y1-20):y1+face_h, x1:x2]
+                    color = (0, 0, 255) # Violation
+                    # Face crop logic
+                    head_h = int((y2 - y1) * 0.5)
+                    face_crop = frame[max(0, y1-20):y1+head_h, x1:x2]
                     
                     if face_crop.size > 0:
-                        name_display = identify_worker(face_crop)
+                        worker_name = identify_worker(face_crop)
                     
-                    # Log to DB
-                    # (Optional: isko thoda delay karke save karein taaki duplicate logs na banein)
-                
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                cv2.putText(frame, f"{name_display}: {label}", (x1, y1-10), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                    if save_log:
+                        # Database logging logic (optional: add rate limiting)
+                        pass
+
+                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
+                cv2.putText(frame, f"{worker_name}: {label}", (x1, y1-10), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
     except:
         pass
     return frame
@@ -114,75 +122,77 @@ class VideoProcessor(VideoProcessorBase):
         img = run_detection(img, self.email)
         return av.VideoFrame.from_ndarray(img, format="bgr24")
 
-# --- UI INTERFACE ---
+# --- STREAMLIT UI ---
 st.set_page_config(page_title="Safe-Guard AI", layout="wide")
 
 with st.sidebar:
     st.title("🛡️ SAFE-GUARD AI")
-    menu = st.radio("Go to", ["📊 Analytics", "👤 Worker Database", "🎥 Live Monitoring"])
+    menu = st.radio("Navigation", ["📊 Analytics", "👤 Worker Database", "🎥 Live Monitoring", "📁 Batch Processing"])
     
     st.markdown("---")
     st.subheader("📋 Registered Workers")
-    workers = get_registered_workers()
-    if workers:
-        for w in set(workers): # set() for unique names
+    worker_list = get_registered_workers()
+    if worker_list:
+        for w in worker_list:
             st.write(f"✅ {w}")
     else:
-        st.write("No workers registered yet.")
+        st.caption("No workers registered.")
     
     st.markdown("---")
     target_email = st.text_input("Alert Email", placeholder="manager@site.com")
 
+# --- MENU LOGIC ---
+
 if menu == "📊 Analytics":
-    st.header("📊 Safety Dashboard")
+    st.header("📊 Violation Analytics")
     conn = sqlite3.connect("safety_violations.db")
     df = pd.read_sql_query("SELECT * FROM violations", conn)
     conn.close()
-
     if not df.empty:
-        c1, c2 = st.columns(2)
-        c1.metric("Total Violations", len(df))
-        st.plotly_chart(px.pie(df, names='worker_name', title="Violations by Worker", hole=0.4), use_container_width=True)
-        st.dataframe(df.sort_values(by="timestamp", ascending=False), use_container_width=True)
+        st.plotly_chart(px.bar(df, x='worker_name', color='equipment', title="Violations per Worker"))
+        st.dataframe(df, use_container_width=True)
     else:
-        st.info("No logs in database yet.")
+        st.info("No data available.")
 
 elif menu == "👤 Worker Database":
-    st.header("👤 Worker Registration")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        name = st.text_input("Worker Name (e.g. Ali)")
-        wid = st.text_input("Worker ID (e.g. 101)")
-        source = st.radio("Registration Source", ["Upload", "Camera"])
-        img_file = st.file_uploader("Upload Face Image", type=['jpg','png']) if source == "Upload" else st.camera_input("Capture Face")
-
-    if st.button("Register & Save"):
-        if name and wid and img_file:
-            clean_name = name.strip().replace(" ", "_")
-            file_path = os.path.join(FACES_DB, f"{clean_name}_{wid}.jpg")
-            img = Image.open(img_file).convert("RGB")
-            img.save(file_path)
-            
-            # Reset DeepFace Cache
-            pkl = os.path.join(FACES_DB, "representations_vgg_face.pkl")
-            if os.path.exists(pkl): os.remove(pkl)
-            
-            st.success(f"Worker {name} has been registered!")
-            st.rerun() # Refresh to update sidebar list
-        else:
-            st.warning("Please provide Name, ID and Image.")
+    st.header("👤 Register Worker")
+    name = st.text_input("Name")
+    wid = st.text_input("ID")
+    img_file = st.file_uploader("Face Image", type=['jpg','png'])
+    if st.button("Register") and name and wid and img_file:
+        path = os.path.join(FACES_DB, f"{name.strip()}_{wid}.jpg")
+        Image.open(img_file).convert("RGB").save(path)
+        st.success(f"{name} Registered!")
+        st.rerun()
 
 elif menu == "🎥 Live Monitoring":
-    st.header("🎥 Real-Time Worker Recognition")
-    if not workers:
-        st.error("⚠️ Pehle 'Worker Database' mein ja kar kisi ko register karein, warna recognition kaam nahi karegi.")
-    
+    st.header("🎥 Live Recognition Feed")
     webrtc_streamer(
-        key="safety-stream",
-        mode=WebRtcMode.SENDRECV,
+        key="live",
         video_processor_factory=lambda: VideoProcessor(target_email),
         rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
-        media_stream_constraints={"video": True, "audio": False},
-        async_processing=True
+        media_stream_constraints={"video": True, "audio": False}
     )
+
+elif menu == "📁 Batch Processing":
+    st.header("📁 Batch Image Analysis")
+    st.write("Multiple images upload karein aur system har kisi ka PPE aur Worker ID check karega.")
+    
+    uploaded_files = st.file_uploader("Upload Images", type=['jpg','png','jpeg'], accept_multiple_files=True)
+    
+    if uploaded_files:
+        if st.button("Start Processing"):
+            cols = st.columns(2)
+            for idx, file in enumerate(uploaded_files):
+                # Convert to CV2 format
+                file_bytes = np.asarray(bytearray(file.read()), dtype=np.uint8)
+                frame = cv2.imdecode(file_bytes, 1)
+                
+                with st.spinner(f"Processing {file.name}..."):
+                    # Detection aur Recognition chalayein
+                    processed_img = run_detection(frame, target_email, save_log=True)
+                    
+                    # Display in grid
+                    with cols[idx % 2]:
+                        st.image(cv2.cvtColor(processed_img, cv2.COLOR_BGR2RGB), caption=f"Result: {file.name}")
+            st.success("Batch Processing Complete!")
