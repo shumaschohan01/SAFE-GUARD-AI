@@ -16,9 +16,17 @@ API_URL = "https://shumaschohan-safeguard-ai.hf.space/predict/"
 N8N_URL = "https://eom4pk834n2y9tj.m.pipedream.net"
 FACES_DB = "worker_faces"
 
-# Ensure directory exists
-if not os.path.exists(FACES_DB):
-    os.makedirs(FACES_DB)
+# --- CONFIGURATION ---
+FACES_DB = "worker_faces"
+
+# Robust folder handling
+if os.path.exists(FACES_DB):
+    if not os.path.isdir(FACES_DB):
+        # Agar worker_faces naam ki koi file pehle se maujood hai jo folder nahi hai
+        os.remove(FACES_DB)
+        os.makedirs(FACES_DB)
+else:
+    os.makedirs(FACES_DB, exist_ok=True)
 
 # --- DATABASE ---
 def init_db():
