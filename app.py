@@ -231,32 +231,33 @@ elif menu == "👤 Worker Database":
     col1, col2 = st.columns(2)
     with col1:
         method = st.radio("Method", ["Camera", "Upload"])
-        name = st.text_input("Name")
-        emp_id = st.text_input("ID")
-        img_file = st.camera_input("Photo") if method == "Camera" else st.file_uploader("Photo", type=['jpg', 'png'])
-        if st.button("Register Now"):
-    if new_name and new_id and img_input:
-        # Folder ko dobara check karein (Safety first!)
-        os.makedirs(FACES_DB, exist_ok=True)
+        new_name = st.text_input("Name")
+        new_id = st.text_input("ID")
+        img_input = st.camera_input("Photo") if method == "Camera" else st.file_uploader("Photo", type=['jpg', 'png'])
         
-        clean_name = new_name.strip().replace(" ", "_")
-        filename = f"{clean_name}_{new_id.strip()}.jpg"
-        save_path = os.path.join(FACES_DB, filename)
+        if st.button("Register Now"):
+            if new_name and new_id and img_input:
+                os.makedirs(FACES_DB, exist_ok=True)
+                
+                clean_name = new_name.strip().replace(" ", "_")
+                filename = f"{clean_name}_{new_id.strip()}.jpg"
+                save_path = os.path.join(FACES_DB, filename)
 
-        try:
-            img = Image.open(img_input).convert("RGB")
-            img.save(save_path)
-            
-            # DeepFace ki purani cache (.pkl files) delete karein taaki naya banda pehchana jaye
-            for f in os.listdir(FACES_DB):
-                if f.endswith(".pkl"):
-                    os.remove(os.path.join(FACES_DB, f))
-            
-            st.success(f"✅ {new_name} registered!")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Error saving image: {e}")
-
+                try:
+                    img = Image.open(img_input).convert("RGB")
+                    img.save(save_path)
+                    
+                    for f in os.listdir(FACES_DB):
+                        if f.endswith(".pkl"):
+                            os.remove(os.path.join(FACES_DB, f))
+                    
+                    st.success(f"✅ {new_name} registered!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error saving image: {e}")
+            else:
+                st.error("Naam, ID aur Photo lazmi hain.")
+                
 elif menu == "🎥 Live Monitoring":
     st.header("🎥 Live Feed")
     # Multiple STUN servers for better connectivity
