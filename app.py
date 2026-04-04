@@ -57,16 +57,28 @@ def identify_worker(face_img):
         if not os.path.exists(FACES_DB) or not os.listdir(FACES_DB): 
             return "Unknown_N/A"
         
-        # Recognition model aur detector specify karein
-        results = DeepFace.find(img_path=face_img, db_path=FACES_DB, enforce_detection=False, silent=True)
+        # Recognition process
+        results = DeepFace.find(
+            img_path=face_img, 
+            db_path=FACES_DB, 
+            model_name='Facenet', 
+            distance_metric='cosine',
+            enforce_detection=False, 
+            silent=True
+        )
         
         if len(results) > 0 and not results[0].empty:
-            # Distance check karein (0.40 se kam matlab match mil gaya)
-            if results[0].iloc[0]['distance'] < 0.40: 
-                full_path = results[0].iloc[0]['identity']
+            # Cosine distance: Jitna chota hoga, utna pakka match hoga
+            # 0.40 ek standard "Safe" threshold hai
+            best_match = results[0].iloc[0]
+            if best_match['distance'] < 0.40: 
+                full_path = best_match['identity']
+                # File name se worker ka naam nikalna (e.g. Ahmad_123.jpg -> Ahmad_123)
                 return os.path.basename(full_path).split('.')[0]
+                
     except Exception as e:
-        print(f"Recognition Error: {e}")
+        print(f"Face Recognition Error: {e}")
+        
     return "Unknown_N/A"
 
 def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
