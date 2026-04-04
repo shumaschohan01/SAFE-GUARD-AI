@@ -46,31 +46,37 @@ def identify_worker(face_img):
         if not os.path.exists(FACES_DB) or not os.listdir(FACES_DB):
             return "Unknown_N/A"
 
-        # 🔴 YE LINE ZAROORI HAI: DeepFace ki purani cache delete karein taaki naya banda detect ho
+        # Cache clear karna taaki naye workers foran detect hon
         pkl_path = os.path.join(FACES_DB, "representations_vgg_face.pkl")
         if os.path.exists(pkl_path):
             os.remove(pkl_path)
 
+        # Temp file save karein processing ke liye
         temp_path = "temp_face.jpg"
         cv2.imwrite(temp_path, face_img)
         
-        # Identification start
+        # Identification - Model VGG-Face is good, but Facenet is more robust
         results = DeepFace.find(
             img_path=temp_path, 
             db_path=FACES_DB, 
-            model_name='VGG-Face', 
+            model_name='VGG-Face', # Aap 'Facenet' bhi try kar sakte hain
             enforce_detection=False, 
-            silent=True
+            silent=True,
+            detector_backend='opencv' # Faster for real-time
         )
 
         if len(results) > 0 and not results[0].empty:
+            # Sabse zyada match hone wala result uthayein
             identity = results[0].iloc[0]['identity']
-            if os.path.exists(temp_path): os.remove(temp_path)
-            return os.path.basename(identity).split('.')[0]
+            worker_filename = os.path.basename(identity).replace(".jpg", "").replace(".png", "")
+            return worker_filename
         
-        if os.path.exists(temp_path): os.remove(temp_path)
     except Exception as e:
-        print("Face Error:", e)
+        print(f"Recognition Error: {e}")
+    finally:
+        if os.path.exists("temp_face.jpg"):
+            os.remove("temp_face.jpg")
+            
     return "Unknown_N/A"
 
 def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
@@ -123,26 +129,48 @@ def run_detection(frame, user_email):
     try:
         _, img_encoded = cv2.imencode('.jpg', frame)
         response = requests.post(API_URL, files={'file': img_encoded.tobytes()}, timeout=8)
+        
         if response.status_code == 200:
             data = response.json()
             detections = data.get('detections', [])
+            
             for det in detections:
                 label = str(det.get('class', '')).lower()
                 conf = float(det.get('conf', 0))
                 bbox = det.get('bbox', [0, 0, 0, 0])
-                if conf < 0.40: continue
+                
+                if conf < 0.45: continue # Confidence threshold thoda badha diya
+                
                 x1, y1, x2, y2 = map(int, bbox)
+                
+                # Violation check
                 is_unsafe = any(word in label for word in ["no", "missing", "unsafe", "without", "off"])
+                
                 worker_info = "Unknown_N/A"
+                
+                # AGAR UNSAFE HAI: Tabhi recognition karein (Performance bachane ke liye)
                 if is_unsafe:
-                    face_crop = frame[max(0, y1):y2, max(0, x1):x2]
-                    if face_crop.size > 0: worker_info = identify_worker(face_crop)
+                    # 🔴 FIX: Box ko thoda expand karein taaki face poora aaye
+                    face_crop = frame[max(0, y1-20):min(frame.shape[0], y2+20), 
+                                      max(0, x1-20):min(frame.shape[1], x2+20)]
+                    
+                    if face_crop.size > 0:
+                        worker_info = identify_worker(face_crop)
+                    
                     save_to_report(label, conf, True, worker_info, user_email)
-                    color = (0, 0, 255)
-                else: color = (0, 255, 0)
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
-                cv2.putText(frame, f"{label} ({conf:.2f})", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-    except: pass
+                    color = (0, 0, 255) # Red for danger
+                else:
+                    color = (0, 255, 0) # Green for safe
+
+                # Draw UI
+                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                display_text = f"{worker_info.split('_')[0]} | {label}"
+                cv2.putText(frame, display_text, (x1, y1 - 10), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                            
+    except Exception as e:
+        print(f"Detection Loop Error: {e}")
+        
     return frame
 
 class VideoProcessor(VideoProcessorBase):
@@ -255,12 +283,16 @@ elif menu == "👤 Worker Database":
         else:
             img_file = st.camera_input("Capture Face", key="worker_cam_key")
 
+        # Worker Database section mein ye change karein
         if st.button("Register Now") and name and wid and img_file:
-            img_path = os.path.join(FACES_DB, f"{name.replace(' ', '_')}_{wid}.jpg")
             img = Image.open(img_file)
-            if img.mode != "RGB": img = img.convert("RGB")
+            img = img.resize((640, 480)) # Standardize size
+            img_path = os.path.join(FACES_DB, f"{name.replace(' ', '_')}_{wid}.jpg")
             img.save(img_path)
-            st.success(f"Registered {name}!")
+    # 🔴 PEHLE SE MAUJOOD CACHE DELETE KAREIN
+            if os.path.exists(os.path.join(FACES_DB, "representations_vgg_face.pkl")):
+                os.remove(os.path.join(FACES_DB, "representations_vgg_face.pkl"))
+                st.success(f"Registered {name}!")
 
 elif menu == "🎥 Live Monitoring":
     st.header("🎥 Live Feed")
