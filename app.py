@@ -7,13 +7,13 @@ import sqlite3
 import os
 import av
 import plotly.express as px
-from PIL import Image
+import io
+from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime
-from deepface import DeepFace  # Added missing import
+from deepface import DeepFace 
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
 
 # --- CONFIGURATION ---
-# Note: Use the direct "space" URL for Gradio/FastAPI backends
 API_URL = "https://shumaschohan-safeguard-ai.hf.space/run/predict" 
 N8N_URL = "https://eom4pk834n2y9tj.m.pipedream.net"
 
@@ -37,14 +37,13 @@ def init_db():
 init_db()
 
 # --- HELPER FUNCTIONS ---
-def identify_worker(face_img):
+def identify_worker(face_img_array):
     try:
         if not os.path.exists(FACES_DB) or not os.listdir(FACES_DB): 
             return "Unknown_N/A"
         
-        # Ensure the image is in RGB for DeepFace
         results = DeepFace.find(
-            img_path=face_img, 
+            img_path=face_img_array, 
             db_path=FACES_DB, 
             model_name='ArcFace', 
             distance_metric='cosine',
@@ -82,17 +81,23 @@ def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
     except Exception as e:
         print(f"DB/Alert Error: {e}")
 
-def run_detection(frame, user_email):
+def run_detection(img_array, user_email):
     try:
-        # Convert frame to bytes for API
-        _, img_encoded = cv2.imencode('.jpg', frame)
+        # Convert NumPy array to PIL Image for processing
+        pil_img = Image.fromarray(img_array)
         
-        # Updated Request structure for Hugging Face Spaces
-        files = {'file': ('image.jpg', img_encoded.tobytes(), 'image/jpeg')}
+        # Prepare image for API call without CV2
+        img_byte_arr = io.BytesIO()
+        pil_img.save(img_byte_arr, format='JPEG')
+        img_bytes = img_byte_arr.getvalue()
+        
+        files = {'file': ('image.jpg', img_bytes, 'image/jpeg')}
         response = requests.post(API_URL, files=files, timeout=5)
         
         if response.status_code == 200:
+            draw = ImageDraw.Draw(pil_img)
             detections = response.json().get('detections', [])
+            
             for det in detections:
                 label, conf = det['class'], det['conf']
                 x1, y1, x2, y2 = map(int, det['bbox'])
@@ -100,26 +105,28 @@ def run_detection(frame, user_email):
                 
                 worker_info = "Unknown_N/A"
                 if is_unsafe:
-                    face_crop = frame[max(0, y1-20):y2+20, max(0, x1-20):x2+20]
-                    if face_crop.size > 0:
-                        worker_info = identify_worker(cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB))
+                    # Face crop using PIL
+                    face_crop = pil_img.crop((max(0, x1-20), max(0, y1-20), x2+20, y2+20))
+                    worker_info = identify_worker(np.array(face_crop))
                     save_to_report(label, conf, True, worker_info, user_email)
                 
-                color = (0, 0, 255) if is_unsafe else (0, 255, 0)
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                cv2.putText(frame, f"{worker_info.split('_')[0]}: {label}", (x1, y1-10), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-    except Exception:
-        pass # Silently handle API timeouts or connection drops
-    return frame
+                color = "red" if is_unsafe else "green"
+                draw.rectangle([x1, y1, x2, y2], outline=color, width=3)
+                draw.text((x1, y1-15), f"{worker_info.split('_')[0]}: {label}", fill=color)
+            
+            return np.array(pil_img)
+    except Exception as e:
+        print(f"Detection Error: {e}")
+    return img_array
 
 class VideoProcessor(VideoProcessorBase):
     def __init__(self, email):
         self.email = email
     def recv(self, frame):
-        img = frame.to_ndarray(format="bgr24")
+        # Streamlit-webrtc gives RGB by default
+        img = frame.to_ndarray(format="rgb24")
         img = run_detection(img, self.email)
-        return av.VideoFrame.from_ndarray(img, format="bgr24")
+        return av.VideoFrame.from_ndarray(img, format="rgb24")
 
 # --- UI INTERFACE ---
 st.set_page_config(page_title="Safe-Guard AI", layout="wide", page_icon="🛡️")
@@ -147,7 +154,10 @@ if menu == "📊 Analytics":
             fig_pie = px.pie(df, names='worker_name', hole=0.4, title="Violations by Personnel", template="plotly_dark")
             st.plotly_chart(fig_pie, use_container_width=True)
         with col_bar:
-            fig_bar = px.bar(df['equipment'].value_counts().reset_index(), x='index', y='equipment', title="Equipment Issues", template="plotly_dark")
+            # Fixed bar chart syntax
+            counts = df['equipment'].value_counts().reset_index()
+            counts.columns = ['Equipment', 'Count']
+            fig_bar = px.bar(counts, x='Equipment', y='Count', title="Equipment Issues", template="plotly_dark")
             st.plotly_chart(fig_bar, use_container_width=True)
         st.dataframe(df.sort_values(by="timestamp", ascending=False), use_container_width=True)
     else:
@@ -167,7 +177,6 @@ elif menu == "👤 Worker Database":
             if submit and name and wid and img_file:
                 path = os.path.join(FACES_DB, f"{name.replace(' ', '_')}_{wid}.jpg")
                 Image.open(img_file).convert("RGB").save(path)
-                # Clear DeepFace cache to recognize new person immediately
                 for f in os.listdir(FACES_DB):
                     if f.endswith(".pkl"): os.remove(os.path.join(FACES_DB, f))
                 st.success(f"Registered {name}")
@@ -195,7 +204,6 @@ elif menu == "📁 Batch Processing":
     uploaded_files = st.file_uploader("Choose images", accept_multiple_files=True)
     if uploaded_files:
         for uf in uploaded_files:
-            file_bytes = np.asarray(bytearray(uf.read()), dtype=np.uint8)
-            frame = cv2.imdecode(file_bytes, 1)
-            processed = run_detection(frame, target_email)
-            st.image(cv2.cvtColor(processed, cv2.COLOR_BGR2RGB), caption=uf.name)
+            img = Image.open(uf).convert("RGB")
+            processed_array = run_detection(np.array(img), target_email)
+            st.image(processed_array, caption=uf.name)
