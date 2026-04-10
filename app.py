@@ -16,7 +16,7 @@ from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
 # ==========================================
 # 1. CONFIGURATION & DIRECTORY SETUP
 # ==========================================
-API_URL = "https://huggingface.co/spaces/ShumasChohan/SAFEGUARD-AI/predict/"
+API_URL = "https://shumaschohan-safeguard-ai.hf.space/predict"
 N8N_URL = "https://eom4pk834n2y9tj.m.pipedream.net"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FACES_DB = os.path.join(BASE_DIR, "worker_faces")
@@ -116,8 +116,18 @@ def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
 def run_detection(frame, user_email):
     try:
         _, img_encoded = cv2.imencode('.jpg', frame)
-        response = requests.post(API_URL, files={'file': img_encoded.tobytes()}, timeout=3)
+        # Timeout ko 10 kar dein taake model ko processing ka time mile
+        response = requests.post(API_URL, files={'file': img_encoded.tobytes()}, timeout=10)
+        
+        # DEBUG: Console mein check karein ke kya response aa raha hai
+        # st.write(response.json()) # Temporary check ke liye UI par bhi dekh sakte hain
+        
         detections = response.json().get('detections', [])
+        
+        if not detections:
+            # Agar detections empty hain toh check karein backend kya bhej raha hai
+            print(f"Backend Response: {response.json()}")
+            
         for det in detections:
             label, conf = det['class'], det['conf']
             x1, y1, x2, y2 = map(int, det['bbox'])
