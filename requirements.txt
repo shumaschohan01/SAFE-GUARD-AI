@@ -4,6 +4,7 @@ deepface
 requests
 numpy
 pandas
+sqlite3
 plotly
 matplotlib
 Pillow
