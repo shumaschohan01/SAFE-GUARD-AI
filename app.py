@@ -14,7 +14,7 @@ from datetime import datetime
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
 
 # --- CONFIGURATION ---
-API_URL = "https://shumaschohan-safeguard-ai.hf.space/predict/"
+API_URL = "https://huggingface.co/spaces/ShumasChohan/SAFEGUARD-AI/predict/"
 N8N_URL = "https://eom4pk834n2y9tj.m.pipedream.net"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
