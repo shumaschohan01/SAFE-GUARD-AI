@@ -112,6 +112,7 @@ def save_to_report(v_type, v_conf, is_unsafe, worker_info, user_email):
     except Exception as e:
         print("DB Error:", e)
 
+
 def run_detection(frame, user_email):
     try:
         _, img_encoded = cv2.imencode('.jpg', frame)
@@ -121,19 +122,25 @@ def run_detection(frame, user_email):
             label, conf = det['class'], det['conf']
             x1, y1, x2, y2 = map(int, det['bbox'])
             is_unsafe = any(w in label.lower() for w in ["no", "missing", "unsafe"])
-            
+
             worker_info = "Unknown_N/A"
             if is_unsafe:
-                face_crop = frame[max(0,y1):y2, max(0,x1):x2]
-                if face_crop.size > 0: worker_info = identify_worker(face_crop)
-                save_to_report(label, conf, True, worker_info, user_email)
-            
+                y1_pad, y2_pad = max(0, y1-20), min(frame.shape[0], y2+20)
+                x1_pad, x2_pad = max(0, x1-20), min(frame.shape[1], x2+20)
+                face_crop = frame[y1_pad:y2_pad, x1_pad:x2_pad]
+
+                if face_crop.size > 0:
+                    face_crop_rgb = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
+                    worker_info = identify_worker(face_crop_rgb)
+                    save_to_report(label, conf, True, worker_info, user_email)
+
             color = (0, 0, 255) if is_unsafe else (0, 255, 0)
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
-            cv2.putText(frame, f"{worker_info.split('_')[0]}: {label}", (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-    except: pass
+            cv2.putText(frame, f"{worker_info.split('_')[0]}: {label}", (x1, y1-10), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+    except:
+        pass
     return frame
-
 # ==========================================
 # 4. VIDEO PROCESSING CLASS
 # ==========================================
