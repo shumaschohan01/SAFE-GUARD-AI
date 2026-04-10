@@ -9,3 +9,4 @@ matplotlib
 Pillow
 streamlit-webrtc
 av
+tf-keras
