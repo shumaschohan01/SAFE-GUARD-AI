@@ -116,6 +116,8 @@ def run_detection(frame, user_email):
     try:
         _, img_encoded = cv2.imencode('.jpg', frame)
         response = requests.post(API_URL, files={'file': img_encoded.tobytes()}, timeout=3)
+        print(f"Status Code: {response.status_code}") # Dekhein 200 aa raha hai ya 404/500
+        print(f"Response: {response.text}")           # Dekhein backend kya error bhej raha hai
         detections = response.json().get('detections', [])
         for det in detections:
             label, conf = det['class'], det['conf']
