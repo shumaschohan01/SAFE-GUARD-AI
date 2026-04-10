@@ -16,7 +16,7 @@ from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
 # ==========================================
 # 1. CONFIGURATION & DIRECTORY SETUP
 # ==========================================
-API_URL = "https://shumaschohan-safeguard-ai.hf.space/predict/"
+API_URL = "https://huggingface.co/spaces/ShumasChohan/SAFEGUARD-AI/predict/"
 N8N_URL = "https://eom4pk834n2y9tj.m.pipedream.net"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FACES_DB = os.path.join(BASE_DIR, "worker_faces")
